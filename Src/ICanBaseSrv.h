@@ -33,23 +33,22 @@ public:
 	int ParamUnsubscribe(canbusId_t msg_id);
 
 	int ServiceRegister(ICanService* newService);
-	int ServiceRegister_master(int(*newService)(canbusId_t canasID), int(*removeService)(canbusId_t canasID), int(*changeXPvalue)(canbusId_t canId, float value));
 	int ServiceUnregister(service_channel_t service_code);
 	int ServiceSubscribe(service_channel_t service_code, bool receive = true);
 
-	int ServiceAdvertise(service_channel_t service_code, long interval = CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_USEC);
+	int ServiceAdvertise(service_channel_t service_code, long interval = CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_MSEC);
 	int ServicePublish(service_channel_t service_code);
 	virtual int ServicePublish(int currentRecord);
 
 	// generic callback for can filter
-	static void CallBack(CAN_FRAME* frame);
+	static void CallBackData(CAN_FRAME* frame);
 	static void CallBackService(CAN_FRAME* frame);
 
 protected:
 	static int _diffU8(uint8_t a, uint8_t b);
 	int _handleReceivedParam(CanasMessage * pframe, int subId, long timestamp);
 	static int _handleReceivedService(CanasMessage * pmsg, int subId, long timestamp);
-	virtual void _updateItem(_CanDataRegistration* curParm) = 0;
+	virtual int _updateItem(_CanDataRegistration* curParm) = 0;
 
 	struct _srvRequest {
 		uint8_t nodeId;
@@ -62,13 +61,13 @@ protected:
 		service_channel_t 		canServiceCode = 0;
 		ICanService* 	service = NULL;
 		unsigned long 	timestamp = 0;	// last read time
-		unsigned long 	maxInterval = CANAS_DEFAULT_REPEAT_TIMEOUT_USEC;
+		unsigned long 	maxInterval = CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC;
 		bool 			isAdvertised = false;
 		unsigned long 	tsAdvertise = 0;	// last published time
 		bool 			isPublished = false;
 		bool 			isReplyOnly = false;
 		bool 			isSubscribed = false;
-		unsigned long 	maxIntervalAdvertise = CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_USEC;
+		unsigned long 	maxIntervalAdvertiseMs = CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_MSEC;
 		_srvRequest*	requests = NULL;
 	};
 

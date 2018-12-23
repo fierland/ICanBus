@@ -91,7 +91,7 @@ public:
 	virtual int Response(CanasMessage* msg) = 0;
 	//	virtual int Request(CanasMessage* msg) = 0; // is implemented in child classes
 	virtual int ProcessFrame(CanasMessage* msg) = 0;
-	virtual int Request() = 0;
+	virtual int Request(ulong timestamp) = 0;
 	uint8_t serviceId();
 
 protected:
@@ -105,6 +105,7 @@ protected:
 	struct _canitemNode {
 		uint16_t			canId = 0;
 		int					subscriptions = 0;
+		ulong				timestamp = 0;
 		_subscribedNode*	firstNode = NULL;
 		_subscribedNode*	lastNode = NULL;
 	};
@@ -119,7 +120,7 @@ protected:
 		uint8_t		software_revision;
 		uint8_t		id_distribution;
 		uint8_t		nodeState;
-		long		timestamp = 0;
+		unsigned long		timestamp = 0;
 	} _ICanNodeInfo;
 
 	static QList < _ICanNodeInfo*> _nodeRefs;
@@ -129,6 +130,7 @@ protected:
 	ICanBase*		_CanasBus = NULL;
 	bool			_canAnswer;
 	bool			_canrequest;
+	ulong			_lastCleanupTs = 0;
 };
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -153,7 +155,7 @@ public:
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request();
+	int Request(ulong timestamp);
 	bool isBeaconConfirmed();
 
 private:
@@ -183,7 +185,7 @@ public:
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request();
+	int Request(ulong timestamp);
 	int Request(uint8_t masterNode, boolean newId);
 
 private:
@@ -203,16 +205,16 @@ private:
 //---------------------------------------------------------------------------------------------------------------------
 // service get data class Class definition
 //---------------------------------------------------------------------------------------------------------------------
-//Message	| datafield		|		| service			|| service
-//DataByte	| description	|		| request			|| response
+//Message	| datafield		|		| service			|		| service
+//DataByte	| description	|		| request			|		| response
 //--------------------------------------------------------------
-//0			| Node - ID		| UCHAR | <node - ID>		|| < node - ID>
-//1			| Data Type		| UCHAR | USHORT2			|| USHORT
-//2			| Service code	| UCHAR | 100				|| 100
-//3			| Message Code	| UCHAR | 0 = stop; 1 = new || !0 = error
-//4 - 5		| Data			|USHORT | Canas ID			|USHORT| Canas ID
-//6			| Data			| UCHAR | NodeId		 	|| n.a.
-//7			| Data			| UCHAR	| Send Interval	x10ms|| n.a.
+//0			| Node - ID		| UCHAR | <node - ID>		|		| < node - ID>
+//1			| Data Type		| UCHAR | USHORT2			|		| USHORT
+//2			| Service code	| UCHAR | 100				|		| 100
+//3			| Message Code	| UCHAR | 0 = stop; 1 = new |		| !0 = error
+//4 - 5		| Data			|USHORT | Canas ID			|USHORT	| Canas ID
+//6			| Data			| UCHAR | NodeId		 	|		| n.a.
+//7			| Data			| UCHAR	| n.a.				|		| n.a.
 //--------------------------------------------------------------------------------------------------------------------
 class ICanService_requestdata : public ICanService {
 public:
@@ -221,8 +223,8 @@ public:
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request();
-	int Request(uint16_t dataId, int nodeId, int maxIntervalMs = 1000, bool newId = true);
+	int Request(ulong timestamp);
+	int Request(uint16_t dataId, int nodeId, int maxIntervalMs = CANAS_DEFAULT_SERVICE_POLL_INTERVAL_MSEC, bool newId = true);
 private:
 
 	int _findInCanIdList(uint16_t toFind);
@@ -249,8 +251,8 @@ public:
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request();
-	int Request(uint16_t dataId, int nodeId, int maxIntervalMs = 100, bool newId = true);
+	int Request(ulong timestamp);
+	int Request(uint16_t dataId, int nodeId, int maxIntervalMs = CANAS_DEFAULT_SERVICE_POLL_INTERVAL_MSEC, bool newId = true);
 private:
 
 	struct _dataAccept {

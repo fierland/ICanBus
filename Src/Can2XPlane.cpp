@@ -1,13 +1,19 @@
 #include "Can2XPlane.h"
-#include "ican_debug.h"
+#include "xpudp_debug.h"
+#include <stdlib.h>
 
+//==================================================================================================
+//==================================================================================================
 Can2XPlane::Can2XPlane()
 {}
-
+//==================================================================================================
+//==================================================================================================
 Can2XPlane::~Can2XPlane()
 {}
-
-char* Can2XPlane::fromCan2Xplane(canbusId_t canID)
+/*
+//==================================================================================================
+//==================================================================================================
+uint16_t Can2XPlane::fromCan2Xplane(canbusId_t canID)
 {
 	DPRINTINFO("START");
 
@@ -19,9 +25,11 @@ char* Can2XPlane::fromCan2Xplane(canbusId_t canID)
 
 	DPRINTINFO("STOP");
 
-	return canasXplaneTable[i].xplaneId;
+	return canasXplaneTable[i].canasId;
 }
-
+*/
+//==================================================================================================
+//==================================================================================================
 CanasXplaneTrans* Can2XPlane::fromCan2XplaneElement(canbusId_t canID)
 {
 	DPRINTINFO("START");
@@ -42,3 +50,26 @@ CanasXplaneTrans* Can2XPlane::fromCan2XplaneElement(canbusId_t canID)
 
 	return foundItem;
 }
+/*
+CanasXplaneTrans * Can2XPlane::getName()
+{
+	return &getPlaneName;
+}
+
+//==================================================================================================
+//==================================================================================================
+int Can2XPlane::findPlane(char * planeName)
+{
+	int maxPlanes = sizeof(suportedPlanes) / sizeof(XplanePlanes);
+
+	for (int i = 0; i < maxPlanes; i++)
+	{
+		if (strcmp(planeName, suportedPlanes[i].name))
+		{
+			_currentPlane = 1;
+			return 0;
+		}
+	}
+	return -1;
+}
+*/

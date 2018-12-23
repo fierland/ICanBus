@@ -23,15 +23,10 @@
 #define _ICANBASE_HEADER_
 
 //#include "XPCAN_messages.h"
+#include <stdlib.h>
 #include "CANdriver.h"
+#include "XPCAN_messages.h"
 #include <QList.h>
-
-// types to be used for standard iddentifiers
-typedef uint16_t	canbusId_t;
-typedef uint8_t		nodeId_t;
-typedef uint8_t		messageId_t;
-typedef uint8_t		service_channel_t;
-typedef uint8_t		canbus_data_t;
 
 // master state bit filters
 constexpr uint8_t ICAN_MASTER_STATUS_INTERFACE = 1;
@@ -97,7 +92,7 @@ public:
  * Functions of this group return @ref CanasErrorCode.
  * @{
  */
-	virtual int ParamAdvertise(canbusId_t msg_id, bool addToXPlane = false, long intervalMs = 1000);
+	virtual int ParamAdvertise(canbusId_t msg_id, bool addToXPlane = false, long intervalMs = CANAS_DEFAULT_DATA_TRANSMIT_TIMEOUT_MSEC);
 	virtual int ParamUnadvertise(canbusId_t msg_id);
 	virtual int ParamPublish(canbusId_t msg_id, const CanasMessageData* pdata);
 	virtual int ParamPublish(canbusId_t msg_id, float newVal);
@@ -108,15 +103,15 @@ public:
 	virtual int ServiceSendRequest(const CanasMessage* pmsg, service_channel_t service_channel = 0);
 	virtual int ServiceSendResponse(const CanasMessage* pmsg, service_channel_t service_channel = 0);
 
-	//static void CallBack(CAN_FRAME* frame);
+	//static void CallBackData(CAN_FRAME* frame);
 
 protected:
-	uint32_t _service_request_timeout_usec = CANAS_DEFAULT_SERVICE_REQUEST_TIMEOUT_USEC; ///< Time to wait for response from remote node. Default is okay.
-	uint32_t _service_poll_interval_usec = CANAS_DEFAULT_SERVICE_POLL_INTERVAL_USEC;  ///< Do not change
+	uint32_t _service_request_timeout_msec = CANAS_DEFAULT_SERVICE_REQUEST_TIMEOUT_MSEC; ///< Time to wait for response from remote node. Default is okay.
+	uint32_t _service_poll_interval_msec = CANAS_DEFAULT_SERVICE_POLL_INTERVAL_MSEC;  ///< Do not change
 //	uint8_t  _service_frame_hist_len = CANAS_DEFAULT_SERVICE_HIST_LEN;  ///< Do not change
-	uint32_t _repeat_timeout_usec = CANAS_DEFAULT_REPEAT_TIMEOUT_USEC;///< Largest interval of repeated messages (default should be good enough)
+	uint32_t _repeat_timeout_msec = CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC;///< Largest interval of repeated messages (default should be good enough)
 
-	static const int CANAS_DEFAULT_REPEAT_TIMEOUT_USEC = 30 * 1000 * 1000;
+	static const int CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC = 5 * 1000; // 5 seconds
 
 	static int serviceChannelToMessageID(service_channel_t service_channel, bool isrequest);
 
@@ -129,6 +124,7 @@ protected:
 	};
 
 	static QList<_CanSrvReq*> _serviceReqQueue;
+
 	//static int _findDataRegistrationInList(uint16_t toFind);
 
 	// structure for containing all published dataelements we publish
@@ -137,7 +133,7 @@ protected:
 	//	int linkId;
 	//	canbusId_t canAreoId = 0;
 	//	float	currentVal = 0;
-	//	uint32_t maxIntervalMs = 100;
+	//	uint32_t maxICanIntervalMs = 100;
 	//	uint8_t last_message_code = 0;
 	//	ulong timestamp = 0;	// last send time
 	//	CanasMessageData data;
@@ -145,25 +141,29 @@ protected:
 	//};
 
 	typedef struct _CanDataRegistration {
-		canbusId_t canAreoId = 0;
-		int		replyCode = -1;
-		int		linkId;
-		float	lastVal;
-		void*	indicator = NULL;
-		ulong	timestamp = 0;  // last read time
-		ulong	maxInterval = CANAS_DEFAULT_REPEAT_TIMEOUT_USEC;
+		canbusId_t		canAreoId = 0;
+		int				replyCode = -1;
+		int				linkId;
+		float			lastVal = 0;
+		void*			indicator = NULL;
+		unsigned long	tsChanged = 0;  // last read time
 		// publush info
-		bool	isAdvertised = false;
-		ulong	tsPublish = 0;	// last send time
-		ulong	maxIntervalUs = 100;
+		bool			isAdvertised = false;
+		unsigned long	tsPublish = 0;	// last send time
+		unsigned long	maxICanIntervalMs = CANAS_DEFAULT_DATA_TRANSMIT_TIMEOUT_MSEC;
 		CanasMessageData data;
-		bool	isXplane = false;
-		// subsription info
-		bool	isSubscribed = false;
-		ulong	tsReceived = 0;
-		bool	gotReply = false;
-		bool	doUpdate = false;
-		messageId_t last_message_code = 0;
+		bool			isXplane = false;
+		bool			added2Xplane = false;
+		// subscription info
+		bool			isSubscribed = false;
+		bool			isFilterSet = false;
+		unsigned long	tsReceived = 0;   // last ts data received or request send
+		unsigned long	maxXpIntervalMs = CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC;
+		bool			gotReply = false;
+		bool			doUpdate = false;
+		messageId_t		last_message_code = 0;
+		bool			lock = false;
+		bool			lock2 = false;
 		// advertisement info
 	};
 
@@ -181,15 +181,15 @@ protected:
 	nodeId_t	_masterNodeId = 0;
 	bool		_running = false;
 	static nodeId_t	_node_id;			///< Local Node ID
-	bool _externalBusIsRunning = false;
+	static bool _externalBusIsRunning;
+	unsigned long _externalBusLastTs = 0L;
 	bool _instrumentPowerIsOn = false;
 	bool _masterRunning = false;
 	int _speed = XI_CANBUS_SPEED;
 
 	// callbacks for X Plane
-	int(*_newXservicecall)(canbusId_t) = NULL;
-	int(*_removeXservicecall)(canbusId_t) = NULL;
-	int(*_changeXPvalueCall)(canbusId_t, float) = NULL;
+
+	int _changeXPvalueCall(canbusId_t, float);
 
 private:
 };

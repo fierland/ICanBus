@@ -72,10 +72,11 @@ typedef struct {
 
 class CANdriver {
 public:
+	static int getDataTypeSize(uint8_t type);
 	CANdriver();
 	~CANdriver();
 
-	void start(int speed = 500000);
+	void start(int speed = 500000, int processor = -5);
 	void stop();
 	void setCANPins(uint8_t pinRx, uint8_t pinTx);
 	int writeMsg(CanasCanFrame* frame);

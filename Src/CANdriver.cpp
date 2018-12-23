@@ -24,13 +24,16 @@
 #include <sys/time.h>
 #include <esp_timer.h>
 #include "ican_debug.h"
+#include <machine/ieeefp.h>
 
 // for now we are using only ESP32 nodes so always little endian
 
-//#ifdef ___BIG_ENDIAN
-//#if __BYTE_ORDER__ == __BIG_ENDIAN
 #define SWITCH(x)
 /*
+#ifdef __IEEE_BIG_ENDIAN
+//#if __BYTE_ORDER__ == __BIG_ENDIAN
+#define SWITCH(x)
+
 #else
 
 static inline void _switchByteOrder(void* ptr, int len)
@@ -151,6 +154,15 @@ static int _marshal(CanasMessageData* pmsg)
 	}
 }
 //-------------------------------------------------------------------------------------------------------------------
+int CANdriver::getDataTypeSize(uint8_t type)
+{
+	CanasMessageData msg;
+
+	msg.type = type;
+
+	return _marshal(&msg);
+}
+//-------------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------
 void printFrame(CAN_FRAME *message)
 {
@@ -182,7 +194,7 @@ CANdriver::~CANdriver()
 //-------------------------------------------------------------------------------------------------------------------
 //
 //-------------------------------------------------------------------------------------------------------------------
-void CANdriver::start(int speed)
+void CANdriver::start(int speed, int processor)
 {
 	if (_pinRx != GPIO_NUM_16)
 	{
@@ -192,9 +204,15 @@ void CANdriver::start(int speed)
 
 	CAN0.setCANPins((gpio_num_t)_pinRx, (gpio_num_t)_pinTx);
 
+	if (processor > -1 && processor < 2)
+		CAN0.set_processor(processor);
+
 	if (!CAN0.begin(speed))
 		DPRINT("ERROR Starting can bus");
-	CAN0.watchFor();
+
+	//DLPRINT(1, "Set genericFilter");
+	//CAN0.watchFor();
+	DLPRINT(1, "Start done");
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -218,21 +236,20 @@ void CANdriver::setCANPins(uint8_t pinRx, uint8_t pinTx)
 
 int CANdriver::writeMsg(CanasCanFrame* frame)
 {
-	DPRINTINFO("START");
+	DLPRINTINFO(4, "START");
 	CAN_FRAME message;
 	int res = 0;
 
 	if (frame == NULL)
 		return -ICAN_ERR_ARGUMENT;
 
-	DPRINT(">>Sending MSG:");
+	DLPRINT(4, ">>Sending MSG:");
 
 	for (int i = 0; i < 8; i++)
 		message.data.bytes[i] = frame->data[i];
 
 	message.length = frame->dlc;
-	DPRINT("dlc =");
-	DPRINTLN(frame->dlc);
+	DLVARPRINTLN(4, "dlc =", frame->dlc);
 
 	if (frame->id & CANAS_CAN_FLAG_EFF)
 	{
@@ -246,18 +263,18 @@ int CANdriver::writeMsg(CanasCanFrame* frame)
 	message.rtr = (frame->id & CANAS_CAN_FLAG_RTR) ? 1 : 0;
 
 	if (message.rtr)
-		DPRINT("RTR ");
+		DLPRINT(4, "RTR ");
 
-	DPRINT(">>Sending CAN:");
+#if DEBUG_LEVEL > 2
+	Serial.print(">>Sending CAN:");
 	printFrame(&message);
+#endif
 
-	if (!CAN0.sendFrame(message))
-		res = -ICAN_ERR_DRIVER;
+	CAN0.sendFrame(message);
 
-	DPRINT("Send result=");
-	DPRINTLN(res);
+	//DLVARPRINTLN(1, "Send result=", res);
 
-	DPRINTINFO("START");
+	DLPRINTINFO(4, "START");
 	return res;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -267,17 +284,30 @@ int CANdriver::writeMsg(CanasCanFrame* frame)
 int CANdriver::setFilter(int msgID, void(*cbFunction)(CAN_FRAME *))
 {
 	int newMbx = -1;
+	DLPRINTINFO(2, "START");
+
+	if (cbFunction == NULL)
+		DLPRINTINFO(0, "Empty callback pointer");
+
+	// fix endian conversion
+
+	//SWITCH(msgID);
 
 	newMbx = CAN0.watchFor(msgID);
+
 	// TODO attach callback function
 	if (newMbx != -1)
 	{
-		DPRINT("callback to filter set MbX="); DPRINTLN(newMbx);
+		DLPRINT(1, "callback for:"); DLPRINT(1, msgID); DLPRINT(1, ": filter set MbX = "); DLPRINTLN(1, newMbx);
 		CAN0.setCallback(newMbx, cbFunction);
 	}
 	else
+	{
+		DLPRINTLN(1, "@@ ERROR setting filter");
 		return -ICAN_ERR_DRIVER;
+	}
 
+	DLPRINTINFO(2, "STOP");
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -296,7 +326,8 @@ int64_t CANdriver::timeStamp()
 
 	  //return (tv.tv_sec * 1000LL + (tv.tv_usec/1000LL) );
    */
-	return esp_timer_get_time();
+   //return esp_timer_get_time();
+	return millis();
 	//DPRINTINFO("STOP");
 }
 
@@ -312,7 +343,7 @@ int _CanTryRead(CanasCanFrame * pframe)
 	res = CAN0.read(message);
 	if (res)
 	{
-#ifdef MACRO_DEBUG
+#if DEBUG_LEVEL > 2
 		DPRINT("Recived Msg->");
 		printFrame(&message);
 #endif
@@ -321,7 +352,9 @@ int _CanTryRead(CanasCanFrame * pframe)
 	}
 	else
 	{
+#if DEBUG_LEVEL >  1
 		DPRINT("Recived err->"); DPRINTLN(res);
+#endif
 	}
 	//DPRINTINFO("STOP");
 	return ICAN_INF_NO_DATA;
@@ -345,7 +378,7 @@ int CANdriver::receive(CanasCanFrame * pframe, unsigned int timeout_usec)
 	{
 		if (_CanTryRead(pframe) == 0)
 		{
-			DPRINTLN("frame found");
+			DLPRINTLN(1, "frame found");
 			return ICAN_ERR_OK;
 		}
 
@@ -410,8 +443,9 @@ int CANdriver::can2areo(CanasCanFrame * pframe, CAN_FRAME * message)
 	pframe->dlc = message->length;
 
 	pframe->id = message->id;
+	//SWITCH(pframe->id);
 
-	DPRINT("CanbusID="); DPRINTLN(pframe->id);
+	DPRINT("Host CanbusID="); DPRINTLN(pframe->id);
 
 	if (message->extended)
 	{
@@ -472,14 +506,13 @@ int CANdriver::msg2frame(CanasCanFrame * pframe, uint16_t msg_id, const CanasMes
 	pframe->data[1] = pmsg->data.type;
 	pframe->data[2] = pmsg->service_code;
 	pframe->data[3] = pmsg->message_code;
+
 	int datalen = canasHostToNetwork(pframe->data + 4, &(pmsg->data));
 
 	if (datalen < 0)
 	{
-		DPRINT("framemaker: bad data type=");
-		DPRINT(pmsg->data.type);
-		DPRINT(" error = ");
-		DPRINTLN(datalen);
+		DLVARPRINT(0, "framemaker: bad data type=", pmsg->data.type);
+		DLVARPRINTLN(0, " error = ", datalen);
 		return datalen;
 	};
 
@@ -543,6 +576,7 @@ int CANdriver::areo2can(CanasCanFrame * pframe, CAN_FRAME * message)
 		message->extended = false;
 	}
 	message->id = pframe->id;
+	SWITCH(message->id);
 	message->rtr = (pframe->id & CANAS_CAN_FLAG_RTR) ? 1 : 0;
 
 	return ICAN_ERR_OK;

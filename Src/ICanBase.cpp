@@ -20,12 +20,16 @@
 
 #include "ICanBase.h"
 #include "ican_debug.h"
+#include "Can2XPlane.h"
+#include "GenericDefs.h"
 
 // defines of static elements
 QList<ICanBase::_CanDataRegistration*> ICanBase::_listCanDataRegistrations;
+
 QList<ICanBase::_CanSrvReq*> ICanBase::_serviceReqQueue;
 
 uint8_t	ICanBase::_node_id = 255;
+bool ICanBase::_externalBusIsRunning = false;
 
 #define RANGEINCLUSIVE(x, min, max) (((x) >= (min)) && ((x) <= (max)))
 //---------------------------------------------------------------------------------------------------------------------
@@ -78,10 +82,12 @@ MessageGroup ICanBase::_detectMessageGroup(canbusId_t id)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBase::serviceChannelToMessageID(service_channel_t service_channel, bool isrequest)
 {
+	int ret;
+
 	DPRINTINFO("START");
 	if (RANGEINCLUSIVE(service_channel, CANAS_SERVICE_CHANNEL_HIGH_MIN, CANAS_SERVICE_CHANNEL_HIGH_MAX))
 	{
-		int ret = 128 + service_channel * 2;
+		ret = 128 + service_channel * 2;
 		if (!isrequest)
 			ret++;
 		return ret;
@@ -89,7 +95,7 @@ int ICanBase::serviceChannelToMessageID(service_channel_t service_channel, bool 
 	if (RANGEINCLUSIVE(service_channel, CANAS_SERVICE_CHANNEL_LOW_MIN, CANAS_SERVICE_CHANNEL_LOW_MAX))
 	{
 		service_channel -= CANAS_SERVICE_CHANNEL_LOW_MIN;
-		int ret = 2000 + service_channel * 2;
+		ret = 2000 + service_channel * 2;
 		if (!isrequest)
 			ret++;
 		return ret;
@@ -104,7 +110,13 @@ int ICanBase::serviceChannelToMessageID(service_channel_t service_channel, bool 
 //
 //-------------------------------------------------------------------------------------------------------------------
 ICanBase::ICanBase()
-{}
+{
+	//_listCanDataRegistrations.clear();
+
+	DLPRINT(1, "Emptying Current request queue="); DLPRINTLN(1, _serviceReqQueue.length());
+	_serviceReqQueue.clear();
+	_listCanDataRegistrations.clear();
+}
 
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -118,27 +130,43 @@ int ICanBase::ServiceSendRequest(const CanasMessage* pmsg, service_channel_t ser
 {
 	DPRINTINFO("START");
 	_CanSrvReq* newReq;
+	int i;
 
 	if (pmsg == NULL)
 		return -ICAN_ERR_ARGUMENT;
 
-	DumpMessage(pmsg);
+#if DEBUG_LEVEL > 0
+	if (service_channel != 0)
+	{
+		Serial.print("*** Service send request channel="); Serial.println(service_channel);
+	}
+#endif
+
+	int msg_id = serviceChannelToMessageID(service_channel, true);
+	if (msg_id < 0)
+		return msg_id;
+
+	DLDUMP_MESSAGE(1, pmsg);
 
 	if (pmsg->node_id == _node_id)
 	{ // Self-addressed requests are ridiculous
 		return -ICAN_ERR_BAD_NODE_ID;
 	}
 
-	int msg_id = serviceChannelToMessageID(service_channel, true);
-	if (msg_id < 0)
-		return msg_id;
+#if DEBUG_LEVEL > 0
+	Serial.print("New Msg Id="); Serial.println(msg_id);
+	Serial.print("Current request queue="); Serial.println(_serviceReqQueue.length());
+#endif
 
 	// add into queu if not there
-	int i = 0;
-	while ((i < _serviceReqQueue.length()) && (_serviceReqQueue[i]->node_id != pmsg->node_id) && \
-		(_serviceReqQueue[i]->service_channel != service_channel)) i++;
+	for (i = 0;
+		((i < _serviceReqQueue.length()) && (_serviceReqQueue[i]->node_id != pmsg->node_id) && \
+		(_serviceReqQueue[i]->service_channel != service_channel))
+		; i++);
 
-	if ((_serviceReqQueue.length() == 0) || (i > _serviceReqQueue.length()))
+	DLPRINT(1, "QSeach done="); DLPRINTLN(1, i);
+
+	if ((_serviceReqQueue.length() == 0) || (i >= _serviceReqQueue.length()))
 	{
 		//not found
 		DPRINTLN("Adding new request queue item");
@@ -149,6 +177,7 @@ int ICanBase::ServiceSendRequest(const CanasMessage* pmsg, service_channel_t ser
 	}
 	else
 	{
+		DPRINTLN("Updating request queue item");
 		newReq = _serviceReqQueue[i];
 	}
 
@@ -169,7 +198,10 @@ int ICanBase::ServiceSendResponse(const CanasMessage* pmsg, service_channel_t se
 	if (pmsg == NULL)
 		return -ICAN_ERR_ARGUMENT;
 
+#if DEBUG_LEVEL > 0
+	Serial.print("Service send response channel="); Serial.println(service_channel);
 	DumpMessage(pmsg);
+#endif
 
 	CanasMessage msg = *pmsg;
 	if (msg.node_id == CANAS_BROADCAST_NODE_ID)
@@ -194,7 +226,11 @@ int ICanBase::ServiceSendResponse(const CanasMessage* pmsg, service_channel_t se
 //-------------------------------------------------------------------------------------------------------------------
 void ICanBase::setExternalBusState(bool isRunning)
 {
+	DLPRINTINFO(0, "START");
+	DLVARPRINTLN(0, "Set state to:", isRunning);
 	_externalBusIsRunning = isRunning;
+	_externalBusLastTs = Timestamp();
+	DLPRINTINFO(0, "STOP");
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -211,29 +247,44 @@ void ICanBase::setMasterNode(uint8_t masterNodeId)
 	DPRINT("Set masternode to:"); DPRINTLN(masterNodeId);
 
 	_masterNodeId = masterNodeId;
+	_masterRunning = true;
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
 //-------------------------------------------------------------------------------------------------------------------
 uint8_t ICanBase::getState()
 {
+	DLPRINTINFO(2, "START");
 	uint8_t state = 0;
 	state =
-		((_running) ? ICAN_MASTER_STATUS_INTERFACE : 0) ||
-		((_externalBusIsRunning) ? ICAN_MASTER_STATUS_XPLANE_ACTIVE : 0) ||
+		((_running) ? ICAN_MASTER_STATUS_INTERFACE : 0) |
+		((_externalBusIsRunning) ? ICAN_MASTER_STATUS_XPLANE_ACTIVE : 0) |
 		((_instrumentPowerIsOn) ? ICAN_MASTER_STATUS_POWER : 0);
 
+	DLVARPRINT(2, "NewState = ", _running);
+	DLVARPRINT(2, ":", _externalBusIsRunning);
+	DLVARPRINTLN(2, ":", _instrumentPowerIsOn);
+
 	// TODO : return correct state of node
-	DPRINT("Current state="); DPRINTLN(state);
+	DLPRINT(0, "Current state="); DLPRINTLN(0, state, BIN);
+	DLPRINTINFO(2, "STOP");
 	return state;
 }
-
+//-------------------------------------------------------------------------------------------------------------------
 void ICanBase::setState(uint8_t state)
 {
+	DLPRINTINFO(2, "START");
+	DLPRINT(0, "Setting state to:"); DLPRINTLN(0, state, BIN);
+
 	_masterRunning = state & ICAN_MASTER_STATUS_INTERFACE;
 	_externalBusIsRunning = state & ICAN_MASTER_STATUS_XPLANE_ACTIVE;
-	_instrumentPowerIsOn = state & ICAN_MASTER_STATUS_POWER;
+	if (_instrumentPowerIsOn != (state & ICAN_MASTER_STATUS_POWER))
+	{
+		_instrumentPowerIsOn = state & ICAN_MASTER_STATUS_POWER;
+	}
+	_externalBusLastTs = Timestamp();
 
+	DLPRINTINFO(2, "STOP");
 	return;
 }
 
@@ -294,7 +345,7 @@ int ICanBase::_canasDataCopy(CanasMessageData* pdataTo, const CanasMessageData* 
 //-------------------------------------------------------------------------------------------------------------------
 void ICanBase::DumpCanFrame(const CanasCanFrame * pframe)
 {
-#ifdef MACRO_DEBUG
+#if DEBUG_LEVEL >0
 
 	Serial.print(": CANId=");
 	if (pframe->id < 1000)
@@ -357,42 +408,46 @@ void ICanBase::DumpCanFrame(const CanasCanFrame * pframe)
 
 void ICanBase::DumpMessage(const CanasMessage * pmsg)
 {
-#ifdef MACRO_DEBUG
+#if DEBUG_LEVEL > 0
 
-	DPRINT("CANASMSG->can_id:");
-	DPRINT((unsigned int)pmsg->can_id);
-	DPRINT(": NodeId:");
-	DPRINT((unsigned int)pmsg->node_id);
-	DPRINT(": DataType:");
-	DPRINT((unsigned int)pmsg->data.type);
-	DPRINT(": ServiceCode:");
-	DPRINT((unsigned int)pmsg->service_code);
-	DPRINT(": MessageCode:");
-	DPRINT((unsigned int)pmsg->message_code);
-	DPRINT(": Data:");
-	DPRINT((unsigned int)pmsg->data.container.UCHAR4[0]);
-	DPRINT((unsigned int)pmsg->data.container.UCHAR4[1]);
-	DPRINT((unsigned int)pmsg->data.container.UCHAR4[2]);
-	DPRINT((unsigned int)pmsg->data.container.UCHAR4[3]);
-	DPRINT(":");
+	if (_externalBusIsRunning)
+		Serial.print("*");
+	else
+		Serial.print("@");
+	Serial.print("CANASMSG->can_id:");
+	Serial.print((unsigned int)pmsg->can_id);
+	Serial.print(": NodeId:");
+	Serial.print((unsigned int)pmsg->node_id);
+	Serial.print(": DataType:");
+	Serial.print((unsigned int)pmsg->data.type);
+	Serial.print(": ServiceCode:");
+	Serial.print((unsigned int)pmsg->service_code);
+	Serial.print(": MessageCode:");
+	Serial.print((unsigned int)pmsg->message_code);
+	Serial.print(": Data:");
+	Serial.print((unsigned int)pmsg->data.container.UCHAR4[0]);
+	Serial.print((unsigned int)pmsg->data.container.UCHAR4[1]);
+	Serial.print((unsigned int)pmsg->data.container.UCHAR4[2]);
+	Serial.print((unsigned int)pmsg->data.container.UCHAR4[3]);
+	Serial.print(":");
 
 	if (pmsg->data.type == CANAS_DATATYPE_FLOAT)
 	{
-		DPRINT(" Float=");
-		DPRINT(pmsg->data.container.FLOAT);
+		Serial.print(" Float=");
+		Serial.print(pmsg->data.container.FLOAT);
 	}
 	else if (pmsg->data.type == CANAS_DATATYPE_LONG)
 	{
-		DPRINT(" Float=");
-		DPRINT(pmsg->data.container.LONG);
+		Serial.print(" Float=");
+		Serial.print(pmsg->data.container.LONG);
 	}
 	else if (pmsg->data.type == CANAS_DATATYPE_USHORT)
 	{
-		DPRINT(" USHORT=");
-		DPRINT(pmsg->data.container.USHORT);
+		Serial.print(" USHORT=");
+		Serial.print(pmsg->data.container.USHORT);
 	}
 
-	DPRINTLN(":<<");
+	Serial.println(":<<");
 #endif
 	return;
 }
@@ -451,8 +506,12 @@ int ICanBase::_genericSend(canbusId_t msg_id, uint8_t msggroup, const CanasMessa
 	CanasCanFrame frame;
 	int mkframe_result = -1;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(1, "START");
+
+#if DEBUG_LEVEL >2
+	Serial.print("CAN sending:");
 	DumpMessage(pmsg);
+#endif
 
 	if (!_running)
 		return -ICAN_ERR_NOT_RUNNING;
@@ -460,11 +519,15 @@ int ICanBase::_genericSend(canbusId_t msg_id, uint8_t msggroup, const CanasMessa
 	mkframe_result = CANdriver::msg2frame(&frame, msg_id, pmsg);
 
 	if (mkframe_result != 0)
+	{
+		DLVARPRINTLN(0, "!!CAN sending makeframe error:", mkframe_result);
 		return mkframe_result;
+	}
 
-	DPRINT("]]]sending:");
-
+#if DEBUG_LEVEL >2
+	Serial.print("CAN sending frame:");
 	DumpCanFrame(&frame);
+#endif
 
 	bool sent_successfully = false;
 
@@ -473,10 +536,10 @@ int ICanBase::_genericSend(canbusId_t msg_id, uint8_t msggroup, const CanasMessa
 		sent_successfully = true;            // At least one successful sending is enough to return success.
 	else
 	{
-		DPRINTLN("send failed: result="); DPRINTLN(send_result);
+		DLVARPRINTLN(0, "send failed: result=", send_result);
 	}
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(1, "STOP");
 	return sent_successfully ? 0 : -ICAN_ERR_DRIVER;
 }
 
@@ -486,17 +549,20 @@ int ICanBase::_genericSend(canbusId_t msg_id, uint8_t msggroup, const CanasMessa
 int ICanBase::ParamAdvertise(canbusId_t msg_id, bool addToXPlane, long intervalMs)
 {
 	int curRecord = -1;
+	BaseType_t xHigherPriorityTaskWoken;
+
 	_CanDataRegistration* curRef;
 	MessageGroup msggroup = MSGGROUP_WTF;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(2, "START");
 	/// TODO: find in array
-	DPRINT("adding:"); DPRINTLN(msg_id); DPRINT("Interval:"); DPRINTLN(intervalMs);
+
+	DLVARPRINTLN(1, "CAN Advertising adding:", msg_id);
 
 	// check if valid record
 	if (_detectMessageGroup(msg_id) != MSGGROUP_PARAMETER)
 	{
-		DPRINTLN("update: failed to detect the message group");
+		DLPRINTLN(0, "!!update: failed to detect the message group");
 		return -ICAN_ERR_BAD_MESSAGE_ID;
 	}
 
@@ -512,39 +578,65 @@ int ICanBase::ParamAdvertise(canbusId_t msg_id, bool addToXPlane, long intervalM
 	{
 		// not found so we need to create new item
 		//not found so create new item
-		DPRINTLN("New record");
+		DLPRINTLN(3, "New record");
 		curRef = new _CanDataRegistration;
-		DPRINTLN("added object");
+		DLPRINTLN(3, "added object");
 		_listCanDataRegistrations.push_back(curRef);
-		DPRINTLN("in list");
+		DLPRINTLN(3, "in list");
 		curRef->canAreoId = msg_id;
-		DPRINTLN("type added");
+		DLPRINTLN(3, "type added");
 		// set filter in canbus to capture this element
 //		_canBus.setFilter(msg_id, _callBackData);
 		// send notification to master to start sending data
+		CanasXplaneTrans* foundItem;
+		foundItem = Can2XPlane::fromCan2XplaneElement(msg_id);
+
+		if (foundItem->canasId == msg_id)
+		{
+#if DEBUG_LEVEL > 0
+			Serial.print("xref found:"); Serial.print(foundItem->canasId); Serial.print(": interval:"); Serial.println(foundItem->canIntervalMs);
+#endif
+			curRef->maxICanIntervalMs = foundItem->canIntervalMs;
+			curRef->data.type = foundItem->canasDataType;
+			curRef->data.length = CANdriver::getDataTypeSize(foundItem->canasDataType);
+		}
 	}
 	else
 		curRef = _listCanDataRegistrations[curRecord];
 
-	curRef->maxIntervalUs = intervalMs * 1000;
+	//curRef->maxICanIntervalMs = intervalMs;
 	curRef->data.type = CANAS_DATATYPE_FLOAT;
 	curRef->data.length = 4;
 	curRef->isAdvertised = true;
 
-	if (addToXPlane)
+	if (addToXPlane && !curRef->added2Xplane)
 	{
-		if (_newXservicecall == NULL)
-		{
-			DPRINTLN("@@@@@ No xservice callback");
-			return -ICAN_ERR_LOGIC;
-		}
-		_newXservicecall(msg_id);
 		curRef->isXplane = true;
+
+		/*
+		if (_newXservicecall(msg_id) == 0)
+			curRef->added2Xplane = true;
+			*/
+			//new meganism with inter task queueu
+		queueDataSetItem newDset;
+
+		newDset.canId = msg_id;
+		newDset.interval = 1;
+		xHigherPriorityTaskWoken = pdFALSE;
+		if (xQueueSendToBackFromISR(xQueueDataSet, &newDset, &xHigherPriorityTaskWoken) == pdTRUE)
+			curRef->added2Xplane = true;
 	}
 
-	D1PRINTLN("record processed");
+	/* Now the buffer is empty we can switch context if necessary. */
+	if (xHigherPriorityTaskWoken)
+	{
+		/* Actual macro used here is port specific. */
+		portYIELD_FROM_ISR();
+	}
 
-	DPRINTINFO("STOP");
+	DLPRINTLN(1, "Record processed");
+
+	DLPRINTINFO(2, "STOP");
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -565,8 +657,15 @@ int ICanBase::ParamUnadvertise(canbusId_t msg_id)
 
 	if (_listCanDataRegistrations[curRecord]->isXplane)
 	{
-		_removeXservicecall(msg_id);
-		_listCanDataRegistrations[curRecord]->isXplane = false;
+		BaseType_t xHigherPriorityTaskWoken;
+		queueDataSetItem newDset;
+
+		newDset.canId = _listCanDataRegistrations[curRecord]->canAreoId;
+		newDset.interval = 0;
+		xHigherPriorityTaskWoken = pdFALSE;
+
+		if (xQueueSendToBackFromISR(xQueueDataSet, &newDset, &xHigherPriorityTaskWoken) == pdTRUE)
+			_listCanDataRegistrations[curRecord]->added2Xplane = false;
 	};
 	// remove advertisement
 	_listCanDataRegistrations[curRecord]->isAdvertised = false;
@@ -581,7 +680,7 @@ int ICanBase::ParamPublish(canbusId_t msg_id, const CanasMessageData * pdata)
 {
 	int curRecord = -1;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(1, "START");
 
 	// check we have advertised this one
 	curRecord = _findDataRegistrationInList(msg_id);
@@ -597,7 +696,7 @@ int ICanBase::ParamPublish(canbusId_t msg_id, const CanasMessageData * pdata)
 	ParamPublish(curRecord);
 
 	// TODO: code ParamPublish
-	DPRINTINFO("STOP");
+	DLPRINTINFO(1, "STOP");
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -607,7 +706,7 @@ int ICanBase::ParamPublish(canbusId_t msg_id, float newVal)
 {
 	int curRecord = -1;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(1, "START");
 
 	// check we have advertised this one
 	curRecord = _findDataRegistrationInList(msg_id);
@@ -620,7 +719,7 @@ int ICanBase::ParamPublish(canbusId_t msg_id, float newVal)
 
 	ParamPublish(curRecord);
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(1, "STOP");
 
 	return 0;
 }
@@ -631,9 +730,10 @@ int ICanBase::ParamPublish(int curRecord)
 {
 	CanasMessage msg;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(1, "START");
 	// TODO: What do we do if XP interface is down ?
 	// send message on bus
+	DLVARPRINTLN(1, "item value=", _listCanDataRegistrations[curRecord]->data.container.FLOAT);
 	_canasDataCopy(&(msg.data), &(_listCanDataRegistrations[curRecord]->data));
 
 	msg.message_code = _listCanDataRegistrations[curRecord]->last_message_code;
@@ -642,10 +742,10 @@ int ICanBase::ParamPublish(int curRecord)
 	msg.service_code = _externalBusIsRunning ? 1 : 0;
 	_listCanDataRegistrations[curRecord]->tsPublish = Timestamp();
 
-	return _genericSend(_listCanDataRegistrations[curRecord]->canAreoId, MSGGROUP_PARAMETER, &msg);
+	DLVARPRINTLN(1, "value=", msg.data.container.FLOAT);
 
-	DPRINTINFO("STOP");
-	return 0;
+	DLPRINTINFO(1, "STOP");
+	return _genericSend(_listCanDataRegistrations[curRecord]->canAreoId, MSGGROUP_PARAMETER, &msg);
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -681,25 +781,27 @@ int ICanBase::_findDataRegistrationInList(uint16_t toFind)
 	int curRecord = -1;
 	_CanDataRegistration* tmpRef;
 
-	D1PRINTINFO("START");
-	D1PRINT("find in list:"); D1PRINTLN(toFind); D1PRINT("items in list:"); D1PRINTLN(_listCanDataRegistrations.size());
+	DLPRINTINFO(6, "START");
+	DLVARPRINT(6, "find in list:", toFind);
+	DLVARPRINTLN(6, "items in list:", _listCanDataRegistrations.size());
 
 	int rsize = _listCanDataRegistrations.size();
 	for (int i = 0; i < rsize; i++)
 	{
 		tmpRef = _listCanDataRegistrations[i];
-		D1PRINT("check item:"); D1PRINTLN(i);
-		D1PRINT("Compaire:"); D1PRINT(toFind); D1PRINT(":with:"); D1PRINTLN(tmpRef->canAreoId);
+		DLVARPRINTLN(6, "check item:", i);
+		DLVARPRINT(6, "Compaire:", toFind);
+		DLVARPRINTLN(6, "with:", tmpRef->canAreoId);
 		if (toFind == tmpRef->canAreoId)
 		{
 			curRecord = i;
-			D1PRINTLN("Found !!");
+			DLPRINTLN(6, "Found !!");
 			break;
 		}
 	}
 
-	D1PRINT("find in list done:");	D1PRINTLN(curRecord);
-	D1PRINTINFO("STOP");
+	DLVARPRINTLN(6, "find in list done:", curRecord);
+	DLPRINTINFO(6, "STOP");
 
 	return curRecord;
 }

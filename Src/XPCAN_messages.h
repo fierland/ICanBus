@@ -10,6 +10,13 @@
 
 #include <stdint.h>
 
+// types to be used for standard iddentifiers
+typedef uint16_t	canbusId_t;
+typedef uint8_t		nodeId_t;
+typedef uint8_t		messageId_t;
+typedef uint8_t		service_channel_t;
+typedef uint8_t		canbus_data_t;
+
 // global variables and limits around the ICanbus implementation
 
 constexpr uint8_t ICAN_MIN_SOFTWARE_REVISION = 0;
@@ -17,12 +24,16 @@ constexpr uint8_t CANAS_BROADCAST_NODE_ID = 0;
 constexpr uint8_t XI_Base_NodeID = 1;
 constexpr auto ICAN_BAUD_RATE = 500000;
 
-static const int CANAS_DEFAULT_REPEAT_TIMEOUT_USEC = 30 * 1000;
+static const auto CANAS_NODE_TIMEOUT_MSEC = 60 * 1000;  // 60 sec
+static const auto CANAS_NODE_CLEANUP_MSEC = 10 * 1000;  // 60 sec
+
+static const auto CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC = 10 * 1000;  // 10 sec
+static const auto CANAS_DEFAULT_DATA_TRANSMIT_TIMEOUT_MSEC = 1 * 1000;  // 1 sec
 /**
  * At least 10ms is required by some services.
  * Thus, increasing is NOT recommended.
  */
-static const int CANAS_DEFAULT_SERVICE_POLL_INTERVAL_USEC = 10 * 1000;
+static const auto CANAS_DEFAULT_SERVICE_POLL_INTERVAL_MSEC = 1 * 1000; // every second
 
 /**
  * History length for repetition detection.
@@ -32,9 +43,10 @@ static const int CANAS_DEFAULT_SERVICE_HIST_LEN = 32;
 /**
  * Time to wait for response from remote node
  */
-static const int CANAS_DEFAULT_SERVICE_REQUEST_TIMEOUT_USEC = 100 * 1000;
+static const auto CANAS_DEFAULT_SERVICE_REQUEST_TIMEOUT_MSEC = 10 * 1000;  // 10 seconds
 
-static const int  CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_USEC = 20 * 1000 * 1000;
+static const auto CANAS_DEFAULT_SERVICE_ADVERTISE_TIMEOUT_MSEC = 5 * 1000; // 5 seconds
+static const auto XI_PARM_ADV_MULTIPLY = 0;
 
 typedef enum {
 	CANAS_MSGTYPE_EMERGENCY_EVENT_MIN = 0,
@@ -116,6 +128,7 @@ typedef enum {
 	CANAS_DATATYPE_RESVD_END_ = 99,
 
 	CANAS_DATATYPE_UDEF_BEGIN_ = 100,
+	CANAS_DATATYPE_STRING,
 	CANAS_DATATYPE_UDEF_END_ = 255,
 
 	CANAS_DATATYPE_ALL_END_ = 255
@@ -212,6 +225,7 @@ typedef enum {
 	ICAN_ERR_IS_ADVERTISED,
 	ICAN_ERR_IS_PUBLISHED,
 	ICAN_ERR_IS_SUBSCRIBED,
+	ICAN_ERR_CONNECTION_LOST,
 	ICAN_INF_NO_NODEID_YET,
 	ICAN_INF_NO_DATA
 } InsCanErrorCode;

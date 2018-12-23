@@ -80,6 +80,7 @@ uint8_t ICanService::serviceId()
 {
 	return _myServiceId;
 }
+
 //-------------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService::_findNodeInList(uint8_t toFind)
@@ -87,7 +88,7 @@ int ICanService::_findNodeInList(uint8_t toFind)
 	int curRecord = -1;
 	_ICanNodeInfo* tmpRef;
 
-#if DEBUG_LEVEL > 1
+#if DEBUG_LEVEL > 5
 	DPRINTINFO("START");
 	DPRINT("find in list:"); DPRINTLN(toFind); DPRINT("items in list:"); DPRINTLN(_nodeRefs.size());
 #endif
@@ -95,7 +96,7 @@ int ICanService::_findNodeInList(uint8_t toFind)
 	for (int i = 0; i < _nodeRefs.size(); i++)
 	{
 		tmpRef = _nodeRefs[i];
-#if DEBUG_LEVEL > 1
+#if DEBUG_LEVEL > 5
 		DPRINT("check item:"); DPRINTLN(i);
 		DPRINT("Compaire:"); DPRINT(toFind); DPRINT(":with:"); DPRINTLN(tmpRef->nodeId);
 #endif
@@ -106,7 +107,7 @@ int ICanService::_findNodeInList(uint8_t toFind)
 			break;
 		}
 	}
-#if DEBUG_LEVEL > 1
+#if DEBUG_LEVEL > 5
 	DPRINT("find in list done:"); DPRINTLN(curRecord);
 	DPRINTINFO("STOP");
 #endif
@@ -205,13 +206,20 @@ int ICanService_beacon::ProcessFrame(CanasMessage * msg)
 
 	if (curRecord != -1)
 	{
-		DPRINT("Found Node:"); DPRINTLN(newNodeId);
+#if DEBUG_LEVEL > 2
+		Serial.print("CAN beacon Found Node:"); Serial.println(newNodeId);
+#endif
+
 		newNode = _nodeRefs[curRecord];
 	}
 	else
 	{
+#if DEBUG_LEVEL > 0
+		Serial.print("CAN beacon Adding node:"); Serial.println(newNodeId);
+#endif
 		DPRINT("Added Node for:"); DPRINT(msg->node_id);	DPRINT(" HWid="); DPRINT((uint8_t)msg->data.container.UCHAR4[0], HEX);
 		DPRINT(" SWid="); DPRINT((uint8_t)msg->data.container.UCHAR4[1], HEX);
+
 		newNode = new _ICanNodeInfo;
 		newNode->nodeId = newNodeId;
 		newNode->hardware_revision = msg->data.container.UCHAR4[1];
@@ -233,16 +241,20 @@ int ICanService_beacon::Response(CanasMessage * msg)
 	// check if it is request or reply
 	uint8_t myNodeId;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(3, "START");
 	if (msg == NULL)
 	{
-		DPRINTLN("srv ids response: bad msg param");
+		DLPRINTLN(1, "srv ids response: bad msg param");
 		return -ICAN_ERR_ARGUMENT;
 	}
 
 	// check if master node is correct
 	//msg->node_id = msg->data.container.UCHAR4[1];
-	_CanasBus->setExternalBusState(msg->data.container.UCHAR4[0]);
+	DLPRINT(2, "New state="); DLPRINTLN(0, msg->data.container.UCHAR4[0], BIN);
+
+	uint8_t newState = msg->data.container.UCHAR4[0];
+	_CanasBus->setState(newState);
+
 	uint8_t newMaster = msg->data.container.UCHAR4[1];
 	_CanasBus->setMasterNode(newMaster);
 
@@ -250,7 +262,7 @@ int ICanService_beacon::Response(CanasMessage * msg)
 	if (myNodeId == ICAN_Last_Node)
 	{
 		// nodeid not set yet so do not send response.
-		DPRINTLN("no own node yet");
+		DLPRINTLN(1, "no own node yet");
 		return ICAN_INF_NO_NODEID_YET;
 	}
 
@@ -267,19 +279,19 @@ int ICanService_beacon::Response(CanasMessage * msg)
 
 	if (ret != 0)
 	{
-		DPRINT("srv ids: failed to respond:");
+		DLPRINT(1, "srv ids: failed to respond:");
 		DPRINTLN(ret);
 	}
-	DPRINTINFO("STOP");
+	DLPRINTINFO(3, "STOP");
 
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
 // request an identification service and chek if minimum hard/software versions are ok. Store all nodes that reply
 //-------------------------------------------------------------------------------------------------------------------
-int ICanService_beacon::Request()
+int ICanService_beacon::Request(ulong timestamp)
 {
-	DPRINTINFO("START");
+	DLPRINTINFO(4, "START");
 	CanasMessage msg;
 
 	msg.message_code = 0;  // CANAS version == 0
@@ -298,11 +310,28 @@ int ICanService_beacon::Request()
 		DPRINTLN(ret);
 		return ret;
 	}
-	DPRINTINFO("STOP");
 
+	// cleanup for stations not responding  ?
+
+	if ((_lastCleanupTs + CANAS_NODE_CLEANUP_MSEC) < timestamp)
+	{
+		for (int i = 0; i < _nodeRefs.length(); i++)
+		{
+			if ((_nodeRefs[i]->timestamp + CANAS_NODE_TIMEOUT_MSEC) < timestamp)
+			{
+				// node seems dead
+				DPRINT("Killing node:"); DPRINTLN(_nodeRefs[i].nodeId);
+				// clenup nodeinfo
+				// TODO:CLEANUP CODE
+			}
+		}
+	}
+
+	DLPRINTINFO(4, "STOP");
 	return 0;
 }
-
+//-------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------
 bool ICanService_beacon::isBeaconConfirmed()
 {
 	return _beaconConfirmed;
@@ -332,7 +361,11 @@ ICanService_requestdata::~ICanService_requestdata()
 int ICanService_requestdata::Request(uint16_t dataId, int nodeId, int maxIntervalMs, bool newId)
 {
 	CanasMessage msg;
-	DPRINTINFO("START");
+	DLPRINTINFO(2, "START");
+
+#if DEBUG_LEVEL > 0
+	Serial.print("CAN service request new data:"); Serial.print(dataId); Serial.print(" interval="); Serial.print(maxIntervalMs); Serial.print(" new?="); Serial.println(newId);
+#endif
 
 	msg.node_id = nodeId;	// target node for request
 	msg.data.type = CANAS_DATATYPE_USHORT2;
@@ -349,7 +382,7 @@ int ICanService_requestdata::Request(uint16_t dataId, int nodeId, int maxInterva
 
 	_CanasBus->ServiceSendRequest(&msg, _myServiceId);
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(2, "STOP");
 
 	return 0;
 }
@@ -361,17 +394,16 @@ int ICanService_requestdata::_findInCanIdList(uint16_t toFind)
 	int curRecord = -1;
 	_canitemNode* tmpRef;
 
-#if DEBUG_LEVEL > 1
-	DPRINTINFO("START");
-	DPRINT("find canid in list:"); DPRINTLN(toFind); DPRINT("items in list:"); DPRINTLN(_canItemNodeRefs.size());
-#endif
+	DLPRINTINFO(2, "START");
+
+	DLVARPRINT(5, "CAN find canid in list:", toFind); DLVARPRINTLN(5, "items in list:", _canItemNodeRefs.size());
 
 	//DPRINTLN(_dataReqRefs.size());
 
 	for (int i = 0; i < _canItemNodeRefs.size(); i++)
 	{
-		D1PRINT("check item:"); DPRINTLN(i);
-		D1PRINT("Compaire:"); D1PRINT(toFind); D1PRINT(":with:"); D1PRINTLN(tmpRef->canId);
+		DLVARPRINT(3, "check item:", i);
+		DLVARPRINT(3, "Compaire:", toFind); DLVARPRINTLN(3, "with:", tmpRef->canId);
 
 		tmpRef = _canItemNodeRefs[i];
 		if (toFind == tmpRef->canId)
@@ -381,17 +413,15 @@ int ICanService_requestdata::_findInCanIdList(uint16_t toFind)
 		}
 	}
 
-#if DEBUG_LEVEL > 1
-	DPRINT("find canid done:"); DPRINTLN(curRecord);
-	DPRINTINFO("STOP");
-#endif
+	DLVARPRINTLN(5, "find canid done:", curRecord);
+	DLPRINTINFO(2, "STOP");
 
 	return curRecord;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------
-int ICanService_requestdata::Request()
+int ICanService_requestdata::Request(ulong timestamp)
 {
 	// dummy function not used;
 	return -1;
@@ -402,12 +432,12 @@ int ICanService_requestdata::Request()
 //-------------------------------------------------
 int ICanService_requestdata::ProcessFrame(CanasMessage* msg)
 {
-	DPRINTINFO("START");
+	DLPRINTINFO(2, "START");
 	// TODO: register that server responded or that server is out
 	if (msg->data.type != CANAS_DATATYPE_USHORT)
 	{
-		DPRINT("srv nss req: wrong data type ");
-		DPRINTLN(msg->data.type);
+		DLPRINT(0, "srv nss req: wrong data type ");
+		DLPRINTLN(0, msg->data.type);
 		return -ICAN_REQ_DATA_PARAM_ERROR;
 	}
 
@@ -415,7 +445,7 @@ int ICanService_requestdata::ProcessFrame(CanasMessage* msg)
 
 	_CanasBus->ParamSubscribeCallback(newCanId, msg->message_code);
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(2, "STOP");
 }
 //--------------------------------------------------------------------------------------------------------------------
 int ICanService_requestdata::Response(CanasMessage* msg)
@@ -428,7 +458,7 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 
 	if (msg == NULL)
 	{
-		DPRINTLN("srv nss req: invalid state pointer");
+		DLPRINTLN(0, "srv nss req: invalid state pointer");
 		return -ICAN_ERR_ARGUMENT;
 	}
 
@@ -437,31 +467,31 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 
 	if (msg->data.type != CANAS_DATATYPE_USHORT2)
 	{
-		DPRINT("srv nss req: wrong data type ");
-		DPRINTLN(msg->data.type);
+		DLPRINT(0, "srv nss req: wrong data type ");
+		DLPRINTLN(0, msg->data.type);
 		serviceResult = ICAN_REQ_DATA_PARAM_ERROR;
 	}
 	else if (msg->service_code != _myServiceId)
 	{
-		DPRINT("srv nss req: wrong service code ");
-		DPRINTLN(msg->message_code);
+		DLPRINT(0, " srv nss req: wrong service code ");
+		DLPRINTLN(0, msg->message_code);
 		serviceResult = ICAN_REQ_DATA_BAD_MESSAGE_ID;
 	}
 	else if (nodePointer == -1)
 	{
 		// test if node already did register with master
-		DPRINT("!! need to register on indetification service first");
+		DLPRINTLN(0, "!! need to register on indetification service first");
 		serviceResult = ICAN_REQ_DATA_NOT_REGISTERED;
 	}
 	else if (_nodeRefs[nodePointer]->software_revision < ICAN_MIN_SOFTWARE_REVISION)
 	{
 		// test if software version is ok
-		DPRINT("!! software version node is incorrect");
+		DLPRINTLN(0, "!! software version node is incorrect");
 		serviceResult = ICAN_REQ_DATA_BAD_SOFTWARE_VERSION;
 	}
 	else
 	{
-		DPRINTLN("Done testing");
+		DLPRINTLN(4, "Done testing");
 
 		uint16_t newCanId = msg->data.container.USHORT2[0];
 
@@ -470,6 +500,8 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 
 		//  check if we already provide this item ?
 		int item = _findInCanIdList(newCanId);
+
+		DLPRINT(1, "CAN serive request for new item="); DLPRINT(1, newCanId); DLPRINT(1, " msg="); DLPRINTLN(1, msg->message_code);
 
 		if (msg->message_code == 0)
 		{
@@ -501,7 +533,7 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 			if (item != -1)
 			{
 				// found so update current item with this request
-				DPRINTLN("Item found adding node");
+				DLPRINTLN(1, "Item found adding node");
 				tmpRef = _canItemNodeRefs[item];
 
 				if (_findNode(tmpRef, newNodeId))
@@ -510,7 +542,7 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 				}
 				else
 				{
-					DPRINTLN("Adding new node");
+					DLPRINTLN(1, "Adding new node");
 					tmpRef->subscriptions++;
 					newNode = new _subscribedNode;
 					newNode->nodeId = newNodeId;
@@ -520,18 +552,18 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 			}
 			else
 			{
-				DPRINTLN("Item not found adding canref item");
+				DLPRINTLN(1, "Item not found adding canref item");
 				// test if XP element is available
 				CanasXplaneTrans* cptab = Can2XPlane::fromCan2XplaneElement(newCanId);
 
 				if (cptab->canasId == 0)
 				{
-					DPRINTLN("NO XPref found for canid");
+					DLPRINTLN(0, "NO XPref found for canid");
 					serviceResult = ICAN_REQ_DATA_NO_XREF;
 				}
 				else
 				{
-					DPRINTLN("Adding new canref item");
+					DLPRINTLN(1, "Adding new canref item");
 					// not found so add item in list
 					tmpRef = new _canitemNode;
 					tmpRef->canId = newCanId;
@@ -542,7 +574,10 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 					tmpRef->subscriptions = 1;
 					_canItemNodeRefs.push_back(tmpRef);
 
-					result = _CanasBus->ParamAdvertise(newCanId, true, (msg->data.container.UCHAR4[3]) * 10);
+					DLPRINTLN(1, "CAN advertising new data element");
+
+					//result = _CanasBus->ParamRegister(newCanId, false);
+					result = _CanasBus->ParamAdvertise(newCanId, true, cptab->canIntervalMs);
 
 					switch (result)
 					{
@@ -611,7 +646,7 @@ int ICanService_acceptdata::ProcessFrame(CanasMessage * msg)
 //
 //-------------------------------------------------------------------------------------------------------------------
 
-int ICanService_acceptdata::Request()
+int ICanService_acceptdata::Request(ulong timestamp)
 {
 	return 0;
 }
@@ -647,15 +682,14 @@ int ICanService_acceptdata::_findInList(uint8_t toFind)
 	int curRecord = -1;
 	_canitemNode* tmpRef;
 
-	D1PRINTINFO("START");
+	DLPRINTINFO(2, "START");
 
-	D1PRINT("find in list:"); D1PRINTLN(toFind); D1PRINT("items in list:");
-	//DPRINTLN(_dataReqRefs.size());
+	DLVARPRINT(2, "find in list:", toFind);
+	//DLVARPRINTLN(2,"items in list:",_canItemNodeRefs.size());
 
 	for (int i = 0; i < _canItemNodeRefs.size(); i++)
 	{
-		D1PRINT("check item:"); DPRINTLN(i);
-		D1PRINT("Compaire:"); D1PRINT(toFind); D1PRINT(":with:"); D1PRINTLN(tmpRef->canId);
+		DLVARPRINTLN(2, "check item:", i); DLVARPRINT(2, "Compaire:", toFind); DLVARPRINTLN(2, "with:", tmpRef->canId);
 
 		tmpRef = _canItemNodeRefs[i];
 		if (toFind == tmpRef->canId)
@@ -665,8 +699,8 @@ int ICanService_acceptdata::_findInList(uint8_t toFind)
 		}
 	}
 
-	D1PRINT("find in list done:"); D1PRINTLN(curRecord);
-	D1PRINTINFO("STOP");
+	DLVARPRINTLN(2, "find in list done:", curRecord);
+	DLPRINTINFO(2, "STOP");
 
 	return curRecord;
 }
@@ -676,13 +710,13 @@ int ICanService_acceptdata::_findInList(uint8_t toFind)
 ICanService_getNodeId::ICanService_getNodeId(ICanBase * CanAsBus) : ICanService(CanAsBus, ICAN_SRV_GETNODEID)
 {
 	uint64_t macId;
-	DPRINTINFO("START");
+	DLPRINTINFO(1, "START");
 
 	_mySerial = ESP.getEfuseMac();
 
-	DPRINT("Serial="); DPRINTLN((unsigned long)_mySerial, HEX);
+	DLVARPRINT(2, "Serial=", (unsigned long)_mySerial, HEX);
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(1, "STOP");
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -700,10 +734,10 @@ int ICanService_getNodeId::Response(CanasMessage * msg)
 	_node *curNode, *lastNode = NULL, *newNode = NULL;
 	uint32_t newSerial;
 
-	DPRINTINFO("START");
+	DLPRINTINFO(3, "START");
 	if (msg == NULL)
 	{
-		DPRINTLN("srv ids response: bad msg param");
+		DLPRINTLN(0, "srv ids response: bad msg param");
 		return -ICAN_ERR_ARGUMENT;
 	}
 
@@ -711,32 +745,34 @@ int ICanService_getNodeId::Response(CanasMessage * msg)
 	{
 		return -ICAN_ERR_BAD_DATA_TYPE;
 	}
-	DPRINTINFO("CHECK1");
+
 	// find in list
 	curNode = _allNodes;
 	newSerial = msg->data.container.ULONG;
-	DPRINT("Serial="); DPRINTLN(newSerial);
+	DLVARPRINTLN(2, "Serial=", newSerial);
 
-	DPRINTINFO("CHECK2");
 	while ((curNode != NULL) && (curNode->nodeSerial != newSerial))
 	{
-		DPRINT("INLIST="); DPRINTLN(curNode->nodeSerial);
+		DLVARPRINTLN(2, "INLIST=", curNode->nodeSerial);
 
 		lastNode = curNode;
 		curNode = curNode->nextNode;
 	};
-	DPRINTINFO("CHECK3");
+
 	if (curNode == NULL)
 	{
-		DPRINTLN("not found so make new one");
+		DLPRINT(2, "not found so make new one");
 		newNode = new _node;
 		newNode->nodeSerial = newSerial;
-		DPRINT("New node ="); DPRINTLN(_lastNodeId);
+		DLVARPRINTLN(2, "New node =", _lastNodeId);
 		newNode->nodeId = _lastNodeId++;
 		newNode->lastNode = curNode;
+
+		DLVARPRINT(1, "CAN Add Node:", newNode->nodeId);
+
 		if (_allNodes != NULL)
 		{
-			DPRINTLN("Adding at lastnode");
+			DLPRINTLN(2, "Adding at lastnode");
 			lastNode->nextNode = newNode;
 		}
 		else
@@ -748,18 +784,16 @@ int ICanService_getNodeId::Response(CanasMessage * msg)
 		newNode = curNode;
 	};
 
-	DPRINTINFO("CHECK4");
-	DPRINT("Sending newNode ="); DPRINTLN(newNode->nodeId);
+	DLVARPRINTLN(1, "Sending newNode =", newNode->nodeId);
 
 	msg->message_code = newNode->nodeId;
 
 	int ret = _CanasBus->ServiceSendResponse(msg, _myServiceId);
 	if (ret != 0)
 	{
-		DPRINT("srv ids: failed to respond:");
-		DPRINTLN(ret);
+		DLVARPRINTLN(0, "!!srv ids: failed to respond:", ret);
 	}
-	DPRINTINFO("STOP");
+	DLPRINTINFO(3, "STOP");
 
 	return 0;
 }
@@ -769,34 +803,34 @@ int ICanService_getNodeId::Response(CanasMessage * msg)
 int ICanService_getNodeId::ProcessFrame(CanasMessage * msg)
 {
 	// TODO: Code
-	DPRINTINFO("START");
+	DLPRINTINFO(3, "START");
 	if (msg == NULL)
 	{
-		DPRINTLN("srv ids response: bad msg param");
+		DLPRINTLN(0, "srv ids response: bad msg param");
 		return -ICAN_ERR_ARGUMENT;
 	}
 
 	if (msg->data.type != CANAS_DATATYPE_ULONG)
 	{
-		DPRINTLN("srv ids response: bad data type");
+		DLPRINTLN(0, "srv ids response: bad data type");
 		return -ICAN_ERR_BAD_DATA_TYPE;
 	}
 
-	DPRINT("in msg:"); DPRINT(msg->data.container.ULONG); DPRINT(":in module:"); DPRINTLN((ulong)_mySerial);
+	DLVARPRINT(2, "in msg:", msg->data.container.ULONG); DLVARPRINTLN(2, ":in module:", (ulong)_mySerial);
 	if (msg->data.container.ULONG == (ulong)_mySerial)
 	{
 		// this is reply to my request so set Node Id
-		DPRINTLN("setting node id");
+		DLPRINTLN(2, "setting node id");
 		_CanasBus->setNodeId(msg->message_code);
 	}
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(3, "STOP");
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
 //-------------------------------------------------------------------------------------------------------------------
-int ICanService_getNodeId::Request()
+int ICanService_getNodeId::Request(ulong timestamp)
 {
 	return -1;
 }
@@ -804,7 +838,7 @@ int ICanService_getNodeId::Request()
 int ICanService_getNodeId::Request(uint8_t masterNode, boolean newId)
 {
 	CanasMessage msg;
-	DPRINTINFO("START");
+	DLPRINTINFO(3, "START");
 
 	msg.node_id = masterNode;	// target node for request
 	msg.data.type = CANAS_DATATYPE_ULONG;
@@ -816,7 +850,7 @@ int ICanService_getNodeId::Request(uint8_t masterNode, boolean newId)
 
 	_CanasBus->ServiceSendRequest(&msg, _myServiceId);
 
-	DPRINTINFO("STOP");
+	DLPRINTINFO(3, "STOP");
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
