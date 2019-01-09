@@ -1,5 +1,5 @@
 #include "Can2XPlane.h"
-#include "xpudp_debug.h"
+#include "ican_debug.h"
 #include <stdlib.h>
 
 //==================================================================================================

@@ -19,15 +19,18 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)Src\ICanBase.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Src\ICanBaseSrv.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Src\ICanBus.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)Src\ICanInstrument.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)Src\ICanService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\Can2XPlane.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\CanasId.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\CANdriver.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)Src\GenericDefs.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\ICanBase.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\ICanBaseSrv.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\ICanBus.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)Src\ICanInstrument.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\ICanService.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\ican_debug.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)Src\XPCAN_messages.h" />

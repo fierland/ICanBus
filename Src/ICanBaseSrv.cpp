@@ -17,16 +17,21 @@
 //
 // Thanks to mjs513/CANaerospace (Pavel Kirienko, 2013 (pavel.kirienko@gmail.com))
 //-------------------------------------------------------------------------------------------------------------------
+static const char *TAG = "ICanBaseSrv";
+
 #include "ICanBaseSrv.h"
 #include "ican_debug.h"
 #include <esp_task_wdt.h>
+#include "esp_log.h"
 
 // defines of static elements
 QList<ICanBaseSrv::_CanServiceLinks*> ICanBaseSrv::_serviceRefs;
-
+//-------------------------------------------------------------------------------------------------------------------
+//
+//-------------------------------------------------------------------------------------------------------------------
 ICanBaseSrv::ICanBaseSrv(nodeId_t nodeId, uint8_t hdwId, uint8_t swId)
 {
-	DPRINTINFO("START");
+	TRACE_START;
 	ICanBeaconRequestPayload canasCfg;
 
 	_node_id = nodeId;
@@ -49,7 +54,7 @@ ICanBaseSrv::ICanBaseSrv(nodeId_t nodeId, uint8_t hdwId, uint8_t swId)
 	ServiceRegister(_acceptDataService);
 	ServiceRegister(_requestDataService);
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
@@ -81,23 +86,23 @@ int ICanBaseSrv::ParamUnsubscribe(canbusId_t msg_id)
 	CanasCanFrame pframe;
 	_CanDataRegistration* tmpRef;
 	int	listId;
-	DPRINTINFO("START");
+	TRACE_START;
 
-	DPRINT("removing:");
-	DPRINTLN(msg_id);
+	ESP_LOGD(TAG, "Param unsubscribe:%d", msg_id);
 
 	listId = _findDataRegistrationInList(msg_id);
 	if (listId == -1)
 		return -ICAN_ERR_NO_SUCH_ENTRY;
 
-	/// TODO: send notification to master to stop sending data
+	// send notification to master to stop sending data
 	_requestDataService->Request(msg_id, _masterNodeId, 0);
 
 	tmpRef = _listCanDataRegistrations[listId];
 	_listCanDataRegistrations.clear(listId);
+
 	delete tmpRef;
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 	return 0;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -105,8 +110,8 @@ int ICanBaseSrv::ParamUnsubscribe(canbusId_t msg_id)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::_handleReceivedParam(CanasMessage* pframe, int subId, long timestamp)
 {
+	TRACE_START;
 	_CanDataRegistration* curParm;
-	DLPRINTINFO(1, "START");
 
 	curParm = _listCanDataRegistrations[subId];
 
@@ -114,47 +119,48 @@ int ICanBaseSrv::_handleReceivedParam(CanasMessage* pframe, int subId, long time
 	/// positive if a > b
 	int msg_diff = _diffU8(pframe->message_code, curParm->last_message_code);
 
+	ESP_LOGD(TAG, "handeling received canid=%d", pframe->can_id);
+
 	curParm->tsReceived = timestamp;
 
 	if (msg_diff <= 0)
 	{
-		DLPRINT(1, "No new message code Last=");
-		DLPRINT(1, curParm->last_message_code);
-		DLPRINT(1, " new=");
-		DLPRINTLN(1, pframe->message_code);
+		ESP_LOGD(TAG, "No new message code Last=%d new=%d", curParm->last_message_code, pframe->message_code);
 
-		return 0;
+		return ICAN_INF_NO_NEW_DATA;
 	}
+
 	curParm->last_message_code = pframe->message_code;
 
-	if (curParm->data.container.FLOAT != pframe->data.container.FLOAT)
+	if (curParm->data.container.LONG != pframe->data.container.LONG)
 	{
-		curParm->data.container.FLOAT = pframe->data.container.FLOAT;
-		curParm->lastVal = curParm->data.container.FLOAT;
+		//	memcpy(curParm->data.container,pframe->data.container,sizeof(CanasMessageData));
+		curParm->data.container = pframe->data.container;
+		ESP_LOGD(TAG, "data changed Last=%f new=%f", curParm->data.container.FLOAT, pframe->data.container.FLOAT);
+		//curParm->lastVal = curParm->data.container.FLOAT;
 		curParm->tsChanged = timestamp;
 		/// TODO: check type of parameter and use corect cast
 		_updateItem(curParm);
 	}
-
-	DLPRINTINFO(1, "STOP");
-	return 0;
+	TRACE_STOP;
+	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
 //
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::_handleReceivedService(CanasMessage* pmsg, int subId, long timestamp)
 {
+	TRACE_START;
 	_CanServiceLinks* curParm;
 	int res = 0;
 
-	DLPRINTINFO(1, "START");
-	DLVARPRINTLN(1, "SubId=", subId);
+	ESP_LOGD(TAG, "Got service callback SubId=%d", subId);
 
 	curParm = _serviceRefs[subId];
 
 	if (curParm->service == NULL)
 	{
-		DLPRINTLN(0, "Badservice pointer");
+		ESP_LOGE(TAG, "Badservice pointer");
 		return -1;
 	}
 
@@ -168,8 +174,7 @@ int ICanBaseSrv::_handleReceivedService(CanasMessage* pmsg, int subId, long time
 	{
 		res = curParm->service->Response(pmsg);
 	}
-
-	DLPRINTINFO(1, "STOP");
+	TRACE_STOP;
 	return res;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -177,15 +182,14 @@ int ICanBaseSrv::_handleReceivedService(CanasMessage* pmsg, int subId, long time
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::ServiceRegister(ICanService* newService)
 {
-	DPRINTINFO("START");
+	TRACE_START;
 
 	if (newService == NULL)
 		return -ICAN_ERR_ARGUMENT;
 
 	uint8_t service_code = newService->serviceId();
 
-	DPRINT("adding:");
-	DPRINTLN(service_code);
+	ESP_LOGI(TAG, "Registering service:%d", service_code);
 
 	_CanServiceLinks* newRef;
 
@@ -195,18 +199,19 @@ int ICanBaseSrv::ServiceRegister(ICanService* newService)
 		return -ICAN_ERR_ENTRY_EXISTS;
 
 	//not found so create new item
-	DPRINTLN("New record");
+	ESP_LOGV(TAG, "New record");
 	newRef = new _CanServiceLinks;
-	DPRINTLN("added object");
+	assert(newRef != NULL);
+	ESP_LOGV(TAG, "added object");
 	_serviceRefs.push_back(newRef);
-	DPRINTLN("in list");
+	ESP_LOGV(TAG, "in list");
 	newRef->linkId = _serviceRefs.size();
-	DPRINTLN("id adeded");
+	ESP_LOGV(TAG, "id adeded");
 	newRef->canServiceCode = service_code;
-	DPRINTLN("type added");
+	ESP_LOGV(TAG, "type added");
 	newRef->service = newService;
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 
 	return 0;
 }
@@ -216,9 +221,8 @@ int ICanBaseSrv::ServiceRegister(ICanService* newService)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::ServiceUnregister(service_channel_t service_code)
 {
-	DPRINTINFO("START");
-	DPRINT("removing:");
-	DPRINTLN(service_code);
+	TRACE_START;
+	ESP_LOGI(TAG, "Unregister Service:%d", service_code);
 
 	int curService = _findServiceInList(service_code);
 	_CanServiceLinks* tmpRef;
@@ -234,7 +238,7 @@ int ICanBaseSrv::ServiceUnregister(service_channel_t service_code)
 
 	delete tmpRef;
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 
 	return 0;
 }
@@ -247,39 +251,42 @@ int ICanBaseSrv::ServiceSubscribe(service_channel_t serviceChannel, bool replyOn
 	int curRecord = -1;
 	_CanServiceLinks* newRef;
 
-	DPRINTINFO("START");
+	TRACE_START;
 	// find in array
-	DPRINT("adding:"); DPRINTLN(serviceChannel);
+	ESP_LOGI(TAG, "Subscribing to service:%d", serviceChannel);
 
 	// check if we know this param id
 	curRecord = _findServiceInList(serviceChannel);
 
 	if (curRecord == -1)
 	{
-		DPRINT("Not subscribed");
+		ESP_LOGD(TAG, "Not subscribed");
 		return -ICAN_ERR_NO_SUCH_ENTRY;
 	}
 
 	if (_serviceRefs[curRecord]->isSubscribed)
 	{
-		DPRINTLN("!!Already subscribed");
+		ESP_LOGE(TAG, "!!Already subscribed");
 		return -ICAN_ERR_IS_SUBSCRIBED;
 	}
 
 	_serviceRefs[curRecord]->isSubscribed = true;
 	_serviceRefs[curRecord]->isReplyOnly = replyOnly;
 	uint16_t canId = serviceChannelToMessageID(serviceChannel, !replyOnly);
-	DPRINT("Set can filter to:"); DPRINTLN(canId);
 
 	// set filter in canbus to capture this element
+	// debug no filter
+#ifndef ICAN_MASTER
+	ESP_LOGD(TAG, "Set can filter to:%d", canId);
 	if (_canBus.setFilter(canId, _callBackService) != 0)
 	{
-		DPRINT("Error creating filter");
+		ESP_LOGE(TAG, "Error creating filter");
 		return -ICAN_ERR_DRIVER;
 	};
+#endif
 
-	DPRINTINFO("STOP");
-	return 0;
+	TRACE_STOP;
+	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
 // advertise a service
@@ -289,12 +296,10 @@ int ICanBaseSrv::ServiceAdvertise(service_channel_t service_code, long interval)
 	int curRecord = -1;
 	_CanServiceLinks* newRef;
 
-	DPRINTINFO("START");
+	TRACE_START;
 	/// TODO: find in array
 
-#if DEBUG_LEVEL > 0
-	Serial.print("CAN srv advertise:"); Serial.println(service_code);
-#endif
+	ESP_LOGI(TAG, "Adveertising service:%d", service_code);
 
 	// check if we know this param id
 	curRecord = _findServiceInList(service_code);
@@ -302,19 +307,19 @@ int ICanBaseSrv::ServiceAdvertise(service_channel_t service_code, long interval)
 	if (curRecord == -1)
 	{
 		// not found so we can not advertise
-		DPRINTLN("Not found");
+		ESP_LOGD(TAG, "Not found");
 		return -ICAN_ERR_NO_SUCH_ENTRY;
 	}
 	else
 	{
 		//not found so set status to advertise
-		DPRINTLN("Found so set to advertise");
+		ESP_LOGD(TAG, "Found so set to advertise");
 		_serviceRefs[curRecord]->isAdvertised = true;
 		_serviceRefs[curRecord]->maxIntervalAdvertiseMs = interval;
 		_serviceRefs[curRecord]->tsAdvertise = 0;		// so will triger in next update loop
 	}
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -322,12 +327,11 @@ int ICanBaseSrv::ServiceAdvertise(service_channel_t service_code, long interval)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::ServicePublish(service_channel_t service_code)
 {
-	DPRINTINFO("START");
+	TRACE_START;
 	int curRecord = -1;
 	int retVal = 0;
 
-	DPRINT("publish");
-	DPRINTLN(service_code);
+	ESP_LOGI(TAG, "Publishing service %d", service_code);
 
 	// check if we know this param id
 	curRecord = _findServiceInList(service_code);
@@ -335,7 +339,7 @@ int ICanBaseSrv::ServicePublish(service_channel_t service_code)
 	if (curRecord == -1)
 	{
 		// not found so we can not advertise
-		DPRINTLN("Not found");
+		ESP_LOGD(TAG, "Not found");
 		retVal = -ICAN_ERR_NO_SUCH_ENTRY;
 	}
 	else
@@ -344,7 +348,7 @@ int ICanBaseSrv::ServicePublish(service_channel_t service_code)
 		retVal = ServicePublish(curRecord);
 	}
 
-	DPRINTINFO("STOP");
+	TRACE_STOP;
 	return retVal;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -352,65 +356,50 @@ int ICanBaseSrv::ServicePublish(service_channel_t service_code)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanBaseSrv::ServicePublish(int currentRecord)
 {
-	DPRINTINFO("START");
 	unsigned long timestamp = Timestamp();
-
-#if DEBUG_LEVEL > 0
-	if (_serviceRefs[currentRecord]->canServiceCode != 0)
-	{
-		Serial.print("CAN srv advertise:"); Serial.println(_serviceRefs[currentRecord]->canServiceCode);
-	}
-#endif
+	ServicePublish(currentRecord, timestamp);
+}
+//-------------------------------------------------------------------------------------------------------------------
+int ICanBaseSrv::ServicePublish(int currentRecord, long timestamp)
+{
+	TRACE_START;
+	ESP_LOGI(TAG, "Publishing Service:%d", _serviceRefs[currentRecord]->canServiceCode);
 
 	if (!_serviceRefs[currentRecord]->isAdvertised)
 	{
-#if DEBUG_LEVEL > 0
-		Serial.println("NOT advertised:");
-#endif
-		DPRINTLN("!!! not avertised");
+		ESP_LOGE(TAG, "!!! not avertised");
 		return -ICAN_ERR_NOT_ADVERTISED;
 	}
 	_serviceRefs[currentRecord]->service->Request(timestamp);
 	_serviceRefs[currentRecord]->tsAdvertise = timestamp;
 
-	DPRINTINFO("START");
+	TRACE_STOP;
 	return ICAN_ERR_OK;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-//
+// TODO: chanfge handeling datatype pass unchanged and let instrument handle it
 //-------------------------------------------------------------------------------------------------------------------
-void  IRAM_ATTR ICanBaseSrv::CallBackData(CAN_FRAME * pmessage)
+void  ICanBaseSrv::CallBackData(CAN_FRAME * pmessage)
 {
+	TRACE_START;
 	CanasCanFrame frame;
 	_CanDataRegistration* tmpRef;
 	int	listId;
 	float newValue;
 	ulong timeout;
 
-	DLPRINTINFO(2, "START");
-
 	CANdriver::can2areo(&frame, pmessage);
 
 	listId = _findDataRegistrationInList(frame.id);
 
-#if DEBUG_LEVEL > 1
-	Serial.println("");
-	Serial.print("###CAN callback:");
-	Serial.print(frame.id);
-	Serial.print(":found=");
-	Serial.print(listId);
-	DumpCanFrame(&frame);
-#endif
+	ESP_LOGI(TAG, "###CAN data callback:%d :found=%d ", frame.id, listId);
+	DUMP_CAN_FRAME_D(TAG, &frame);
 
 	if (listId != -1)
 	{
 		tmpRef = _listCanDataRegistrations[listId];
 
-		if (tmpRef->lock2)
-			return;
-
-		tmpRef->lock = true;
 		CanasMessage msg;
 
 		CANdriver::frame2msg(&msg, &frame);
@@ -427,59 +416,52 @@ void  IRAM_ATTR ICanBaseSrv::CallBackData(CAN_FRAME * pmessage)
 			newValue = msg.data.container.USHORT;
 			break;
 		default:
-			DLPRINT(0, "!! Unhandeled datatype");
+			ESP_LOGE(TAG, "!! Unhandeled datatype");
 		}
 
 		tmpRef->tsReceived = CANdriver::timeStamp();
-		DLVARPRINT(2, "New Timestamp recived=", tmpRef->tsReceived);
-		DLVARPRINT(2, " Old val=", tmpRef->lastVal);
-		DLVARPRINTLN(2, " new val=", newValue);
+		ESP_LOGD(TAG, "New Timestamp recived=[%d] Old val=%f new val=%f", tmpRef->tsReceived, tmpRef->data.container.FLOAT, newValue);
 
-		if (tmpRef->lastVal != newValue)
+		if (tmpRef->data.container.FLOAT != newValue)
 		{
-			tmpRef->lastVal = newValue;
+			tmpRef->data.container.FLOAT = newValue;
 			tmpRef->doUpdate = true;
 			tmpRef->tsChanged = tmpRef->tsReceived;
 		}
-		tmpRef->lock = false;
-	}
-
-	DLPRINTINFO(2, "STOP");
+	};
+	TRACE_STOP;
 }
+
 //-------------------------------------------------------------------------------------------------------------------
 //
 //-------------------------------------------------------------------------------------------------------------------
-void IRAM_ATTR ICanBaseSrv::CallBackService(CAN_FRAME * canFrame)
+void ICanBaseSrv::CallBackService(CAN_FRAME * canFrame)
 {
+	TRACE_START;
 	CanasCanFrame frame;
 	CanasMessage msg;
 	CanasDataContainer canData;
 	bool isRequest;
 
-	DLPRINTINFO(5, "START");
+	if (canFrame->id != 128)
+		ESP_LOGI(TAG, "###CAN service callback:%d", canFrame->id);
+	else
+		ESP_LOGV(TAG, "###CAN service callback:%d", canFrame->id);
 
 	CANdriver::can2areo(&frame, canFrame);
 	CANdriver::frame2msg(&msg, &frame);
 
-#if DEBUG_LEVEL > 0
-	//if (msg.service_code != 0)
-	//{
-	Serial.println("");
-	Serial.print("###CAN service callback:");
-	DumpCanFrame(&frame);
-	DumpMessage(&msg);
-	//}
-#endif
+	DUMP_CAN_FRAME_D(TAG, &frame);
+	DUMP_CAN_MSG_D(TAG, &msg);
 
-	DPRINT("from node:"); DPRINT(msg.node_id); DPRINT(": Service="); DPRINTLN(msg.service_code);
-	DPRINTLN(msg.can_id % 2);
+	ESP_LOGD(TAG, "from node:%d: Service=%d [%d]", msg.node_id, msg.service_code, msg.can_id % 2);
 
 	isRequest = ((msg.can_id % 2) == 0);
 
 	if (isRequest && (msg.node_id != _node_id) && (msg.service_code != 0))
 	{
 		// request not not adresed to this node and not generic channel so ignore
-		DPRINTLN("request not for me");
+		ESP_LOGD(TAG, "request not for me");
 		return;
 	}
 
@@ -487,17 +469,17 @@ void IRAM_ATTR ICanBaseSrv::CallBackService(CAN_FRAME * canFrame)
 	{
 		// check if we have send request
 		int i = 0;
-		while ((i < _serviceReqQueue.length()) && (_serviceReqQueue[i]->node_id != msg.node_id) && \
+		while ((i < _serviceReqQueue.length()) && (_serviceReqQueue[i]->node_id != msg.node_id) &&
 			(_serviceReqQueue[i]->service_channel != msg.service_code))
 		{
-			DPRINT("item :"); DPRINT(i); DPRINT(": mode_id:"); DPRINT(_serviceReqQueue[i]->node_id); DPRINT(": srv:"); DPRINTLN(_serviceReqQueue[i]->service_channel);
+			ESP_LOGD(TAG, "item :%d: mode_id:%d: srv:%d", i, _serviceReqQueue[i]->node_id, _serviceReqQueue[i]->service_channel);
 			i++;
 		}
-		DPRINT("item found=:"); DPRINTLN(i);
+		ESP_LOGD(TAG, "item found=:%d", i);
 
 		if ((_serviceReqQueue.length() == 0) || (i > _serviceReqQueue.length()))
 		{
-			DPRINTLN("reply not for me");
+			ESP_LOGD(TAG, "reply not for me");
 			return;
 		}
 	}
@@ -505,14 +487,13 @@ void IRAM_ATTR ICanBaseSrv::CallBackService(CAN_FRAME * canFrame)
 	int curRecord = _findServiceInList(msg.service_code);
 	if (curRecord != -1)
 	{
-		_handleReceivedService(&msg, curRecord, millis());
+		_handleReceivedService(&msg, curRecord, CANdriver::timeStamp());
 	}
 	else
 	{
-		DPRINT("CB foreign service msgid="); DPRINT(msg.service_code); DPRINT(" datatype="); DPRINTLN(msg.data.type);
+		ESP_LOGD(TAG, "CB foreign service msgid=%d datatype=%d", msg.service_code, msg.data.type);
 	}
-
-	DLPRINTINFO(5, "STOP");
+	TRACE_STOP;
 }
 //-------------------------------------------------------------------------------------------------------------------
 // helper function to find a item i the list of  subscribed items
@@ -522,15 +503,15 @@ int ICanBaseSrv::_findServiceInList(service_channel_t toFind)
 	int curRecord = -1;
 	_CanServiceLinks* tmpRef;
 
-	DLPRINTINFO(2, "START");
-	DLVARPRINT(3, "find in list:", toFind); DLVARPRINTLN(3, "items in list:", _serviceRefs.size());
+	TRACE_START;
+	ESP_LOGV(TAG, "find in list:%d items in list:%d", toFind, _serviceRefs.size());
 
 	int rsize = _serviceRefs.size();
+
 	for (int i = 0; i < rsize; i++)
 	{
-		DLVARPRINTLN(3, "check item:", i);
-		DLVARPRINT(3, "Compaire:", toFind); DLVARPRINTLN(3, ":with:", tmpRef->canServiceCode);
 		tmpRef = _serviceRefs[i];
+		ESP_LOGV(TAG, "check item:%d Compaire:%d:with:%d:", i, (int)toFind, (int)(tmpRef->canServiceCode));
 		if (toFind == tmpRef->canServiceCode)
 		{
 			curRecord = i;
@@ -538,8 +519,9 @@ int ICanBaseSrv::_findServiceInList(service_channel_t toFind)
 		}
 	}
 
-	DLVARPRINTLN(3, "find in list done:", curRecord);
-	DLPRINTINFO(2, "STOP");
+	ESP_LOGV(TAG, "find in list done:%d", curRecord);
+	TRACE_STOP;
 
 	return curRecord;
 }
+//EOF----------------------------------------------------------------------------------------------------------------

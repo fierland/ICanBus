@@ -81,6 +81,7 @@ public:
 	void setCANPins(uint8_t pinRx, uint8_t pinTx);
 	int writeMsg(CanasCanFrame* frame);
 
+	int setFilter();
 	int setFilter(int msgID, void(*callBack)(CAN_FRAME*));
 
 	int receive(CanasCanFrame* pframe, unsigned int timeout_usec);

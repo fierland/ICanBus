@@ -6,8 +6,8 @@
 //
 //==================================================================================================
 //
-// ICanBus.h
-// Main Can protocol class base stuff.
+// ICanInstrument.h
+// Main Can protocol class specific for instruments.
 //
 // VERSION HISTORY:
 //
@@ -18,35 +18,21 @@
 // Thanks to mjs513/CANaerospace (Pavel Kirienko, 2013 (pavel.kirienko@gmail.com))
 //-------------------------------------------------------------------------------------------------------------------
 
-#ifndef _ICAN_BUS_H_
-#define _ICAN_BUS_H_
+#ifndef _ICAN_INSTRUMENT_H_
+#define _ICAN_INSTRUMENT_H_
 
-#include <ICanBaseSrv.h>
+#ifdef ICAN_INSTRUMENT
+#include "ICanBaseSrv.h"
+#include "GenericIndicator.h"
 
-#ifdef ICAN_MASTER
-
-class ICanBus : public ICanBaseSrv {
+class ICanInstrument : public ICanBaseSrv {
 public:
-	/// <summary>
-	/// Initialize class instance.
-	/// </summary>
-	/// <param name="nodeId">        nodeId to use</param>
-	/// <param name="serviceChannel"> service channel to use</param>
-	/// <param name="hdwId">         Hardware revision</param>
-	/// <param name="swId">          software revision</param>
+	ICanInstrument(uint8_t hdwId, uint8_t swId, void(*myCallBack)(CAN_FRAME *) = NULL, void(*myCallBackService)(CAN_FRAME *) = NULL);
+	~ICanInstrument();
 
-	ICanBus(uint8_t nodeId = 255, uint8_t hdwId = 0, uint8_t swId = 0, void(*myCallBack)(CAN_FRAME*) = NULL, void(*myCallBackService)(CAN_FRAME*) = NULL);
-	~ICanBus();
-	int start(int speed = 500000, int core = 1);
+	int start(int speed = 500000, int toCore = 0);
 	int stop();
-
-	/**
-	 * Update instance state.
-	 * Must be called for every new incoming frame or by timeout.
-	 * @note It is recommended to call this function at least every 10 ms
-	 * @return            @ref CanasErrorCode
-	 */
-	int UpdateMaster();
+	void updateInstrument();  // main proces loop
 
 	/// <summary>
 	/// Parameter subscriptions. Each parameter must be subscribed before you can read it from the
@@ -56,24 +42,22 @@ public:
 	/// <param name="msg_id">canas message id , see canas manual</param>
 	/// <param name="instrument">pointer to instruement class to display parameter</param>
 	/// <returns>CanasErrorCode</returns>
-	int ParamRegister(canbusId_t msg_id, bool subscribe = false);
-	int ParamUpdateValue(canbusId_t msg_id, CanasMessageData data);
-
-	int checkNewDataFromXP();
+	//	int ParamRegister(GenericIndicator* instrument, bool subscribe = true);
+	int ParamRegister(const uint16_t canId, const int interval, const bool send);
+	//int ParamRegister(queueDataSetItem* dataItem);
 
 protected:
-
-	int checkAdvertisements(long timestamp);
-	int checkDataRefs(long timestamp);
-
-	// structure for containing the subscribed data elements to capture
-	int _updateItem(_CanDataRegistration * curParm);
-
 	TaskHandle_t xTaskCanbus = NULL;
 	bool _firstStart = true;
 
-private:
+	//int _connect2master();
+	//int _updateValue(uint16_t type, float value);
+	int _updateItem(_CanDataRegistration * curParm);
+	int _checkNewRegistrations(long timestamp);
+	int _checkCanBus(long timestamp);
+	int _checkDataRegistrations(long timestamp);
+	int _checkAdvertisements(long timestamp);
+	// structure for containing the subscribed data elements to capture
 };
-
 #endif
 #endif

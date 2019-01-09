@@ -86,13 +86,14 @@ class ICanService {
 public:
 	ICanService(ICanBase *CanAsBus, ICanSrvCodes serviceID);
 
-	~ICanService();
+	~ICanService() {/*_CanasBus->ServiceUnregister(_myServiceId);*/ };
 
 	virtual int Response(CanasMessage* msg) = 0;
 	//	virtual int Request(CanasMessage* msg) = 0; // is implemented in child classes
 	virtual int ProcessFrame(CanasMessage* msg) = 0;
 	virtual int Request(ulong timestamp) = 0;
-	uint8_t serviceId();
+	uint8_t serviceId() { return _myServiceId; };
+	void checkNodes(long timestamp);
 
 protected:
 	// TODO : Clean up with extra subclass
@@ -100,6 +101,7 @@ protected:
 		uint8_t		nodeId;
 		uint8_t		intervalMs = 100;
 		_subscribedNode* next = NULL;
+		_subscribedNode* prev = NULL;
 	};
 
 	struct _canitemNode {
@@ -109,9 +111,10 @@ protected:
 		_subscribedNode*	firstNode = NULL;
 		_subscribedNode*	lastNode = NULL;
 	};
-	QList < _canitemNode*> _canItemNodeRefs;
+	static QList < _canitemNode*> _canItemNodeRefs;
 
 	int _findNode(_canitemNode* myStruct, uint8_t nodeId, bool doDelete = false);
+	int _findInCanIdList(uint16_t toFind);
 	int _serviceChannelFromMessageID(canbusId_t msg_id, bool * pisrequest);
 
 	typedef struct {
@@ -156,7 +159,7 @@ public:
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
 	int Request(ulong timestamp);
-	bool isBeaconConfirmed();
+	bool isBeaconConfirmed() { return _beaconConfirmed; };
 
 private:
 
@@ -181,12 +184,12 @@ private:
 class ICanService_getNodeId : public ICanService {
 public:
 	ICanService_getNodeId(ICanBase* CanAsBus);
-	~ICanService_getNodeId();
+	~ICanService_getNodeId() {};
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request(ulong timestamp);
-	int Request(uint8_t masterNode, boolean newId);
+	int Request(ulong timestamp) { return -1; };
+	int Request(uint8_t masterNode, bool newId);
 
 private:
 	struct _node {
@@ -218,16 +221,14 @@ private:
 //--------------------------------------------------------------------------------------------------------------------
 class ICanService_requestdata : public ICanService {
 public:
-	ICanService_requestdata(ICanBase* CanAsBus);
-	~ICanService_requestdata();
+	ICanService_requestdata(ICanBase* CanAsBus) : ICanService(CanAsBus, ICAN_SRV_REQUEST_CANDATA) {};
+	~ICanService_requestdata() {};
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);
-	int Request(ulong timestamp);
+	int Request(ulong timestamp) { return -ICAN_ERR_LOGIC; };
 	int Request(uint16_t dataId, int nodeId, int maxIntervalMs = CANAS_DEFAULT_SERVICE_POLL_INTERVAL_MSEC, bool newId = true);
 private:
-
-	int _findInCanIdList(uint16_t toFind);
 };
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -246,8 +247,8 @@ private:
 //--------------------------------------------------------------------------------------------------------------------
 class ICanService_acceptdata : public ICanService {
 public:
-	ICanService_acceptdata(ICanBase* CanAsBus);
-	~ICanService_acceptdata();
+	ICanService_acceptdata(ICanBase* CanAsBus) : ICanService(CanAsBus, ICAN_SRV_ACCEPT_CANDATA) {};
+	~ICanService_acceptdata() {};
 
 	int Response(CanasMessage* msg);
 	int ProcessFrame(CanasMessage* msg);

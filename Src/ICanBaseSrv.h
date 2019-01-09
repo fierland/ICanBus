@@ -40,6 +40,8 @@ public:
 	int ServicePublish(service_channel_t service_code);
 	virtual int ServicePublish(int currentRecord);
 
+	int ServicePublish(int currentRecord, long timestamp);
+
 	// generic callback for can filter
 	static void CallBackData(CAN_FRAME* frame);
 	static void CallBackService(CAN_FRAME* frame);

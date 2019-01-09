@@ -8,7 +8,8 @@
 #ifndef INSTRUMENTCAN_MESSAGE_H_
 #define INSTRUMENTCAN_MESSAGE_H_
 
-#include <stdint.h>
+#include "stdint.h"
+#include "GenericDefs.h"
 
 // types to be used for standard iddentifiers
 typedef uint16_t	canbusId_t;
@@ -24,11 +25,13 @@ constexpr uint8_t CANAS_BROADCAST_NODE_ID = 0;
 constexpr uint8_t XI_Base_NodeID = 1;
 constexpr auto ICAN_BAUD_RATE = 500000;
 
-static const auto CANAS_NODE_TIMEOUT_MSEC = 60 * 1000;  // 60 sec
+static const auto CANAS_NODE_TIMEOUT_MSEC = 30 * 1000;  // 60 sec
 static const auto CANAS_NODE_CLEANUP_MSEC = 10 * 1000;  // 60 sec
 
-static const auto CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC = 10 * 1000;  // 10 sec
+static const auto CANAS_DEFAULT_REPEAT_TIMEOUT_MSEC = 20 * 1000;  // 10 sec
 static const auto CANAS_DEFAULT_DATA_TRANSMIT_TIMEOUT_MSEC = 1 * 1000;  // 1 sec
+
+static const auto CAN_MAX_ITEMS_PER_CYCLE = 20;
 /**
  * At least 10ms is required by some services.
  * Thus, increasing is NOT recommended.
@@ -79,111 +82,105 @@ typedef enum {
 	CANAS_SERVICE_CHANNEL_LOW_MAX = 115
 } CanasServiceChannelID;
 
-typedef enum {
-	CANAS_DATATYPE_NODATA,
-	CANAS_DATATYPE_ERROR,
+//typedef enum {
+//	CANAS_DATATYPE_NODATA,
+//	CANAS_DATATYPE_ERROR,
+//
+//	CANAS_DATATYPE_FLOAT,
+//
+//	CANAS_DATATYPE_LONG,
+//	CANAS_DATATYPE_ULONG,
+//	CANAS_DATATYPE_BLONG,
+//
+//	CANAS_DATATYPE_SHORT,
+//	CANAS_DATATYPE_USHORT,
+//	CANAS_DATATYPE_BSHORT,
+//
+//	CANAS_DATATYPE_CHAR,
+//	CANAS_DATATYPE_UCHAR,
+//	CANAS_DATATYPE_BCHAR,
+//
+//	CANAS_DATATYPE_SHORT2,
+//	CANAS_DATATYPE_USHORT2,
+//	CANAS_DATATYPE_BSHORT2,
+//
+//	CANAS_DATATYPE_CHAR4,
+//	CANAS_DATATYPE_UCHAR4,
+//	CANAS_DATATYPE_BCHAR4,
+//
+//	CANAS_DATATYPE_CHAR2,
+//	CANAS_DATATYPE_UCHAR2,
+//	CANAS_DATATYPE_BCHAR2,
+//
+//	CANAS_DATATYPE_MEMID,
+//	CANAS_DATATYPE_CHKSUM,
+//
+//	CANAS_DATATYPE_ACHAR,
+//	CANAS_DATATYPE_ACHAR2,
+//	CANAS_DATATYPE_ACHAR4,
+//
+//	CANAS_DATATYPE_CHAR3,
+//	CANAS_DATATYPE_UCHAR3,
+//	CANAS_DATATYPE_BCHAR3,
+//	CANAS_DATATYPE_ACHAR3,
+//
+//	CANAS_DATATYPE_DOUBLEH,
+//	CANAS_DATATYPE_DOUBLEL,
+//
+//	CANAS_DATATYPE_RESVD_BEGIN_,
+//	CANAS_DATATYPE_RESVD_END_ = 99,
+//
+//	CANAS_DATATYPE_UDEF_BEGIN_ = 100,
+//	CANAS_DATATYPE_STRING,
+//	CANAS_DATATYPE_UDEF_END_ = 255,
+//
+//	CANAS_DATATYPE_ALL_END_ = 255
+//} CanasStandardDataTypeID;
 
-	CANAS_DATATYPE_FLOAT,
-
-	CANAS_DATATYPE_LONG,
-	CANAS_DATATYPE_ULONG,
-	CANAS_DATATYPE_BLONG,
-
-	CANAS_DATATYPE_SHORT,
-	CANAS_DATATYPE_USHORT,
-	CANAS_DATATYPE_BSHORT,
-
-	CANAS_DATATYPE_CHAR,
-	CANAS_DATATYPE_UCHAR,
-	CANAS_DATATYPE_BCHAR,
-
-	CANAS_DATATYPE_SHORT2,
-	CANAS_DATATYPE_USHORT2,
-	CANAS_DATATYPE_BSHORT2,
-
-	CANAS_DATATYPE_CHAR4,
-	CANAS_DATATYPE_UCHAR4,
-	CANAS_DATATYPE_BCHAR4,
-
-	CANAS_DATATYPE_CHAR2,
-	CANAS_DATATYPE_UCHAR2,
-	CANAS_DATATYPE_BCHAR2,
-
-	CANAS_DATATYPE_MEMID,
-	CANAS_DATATYPE_CHKSUM,
-
-	CANAS_DATATYPE_ACHAR,
-	CANAS_DATATYPE_ACHAR2,
-	CANAS_DATATYPE_ACHAR4,
-
-	CANAS_DATATYPE_CHAR3,
-	CANAS_DATATYPE_UCHAR3,
-	CANAS_DATATYPE_BCHAR3,
-	CANAS_DATATYPE_ACHAR3,
-
-	CANAS_DATATYPE_DOUBLEH,
-	CANAS_DATATYPE_DOUBLEL,
-
-	CANAS_DATATYPE_RESVD_BEGIN_,
-	CANAS_DATATYPE_RESVD_END_ = 99,
-
-	CANAS_DATATYPE_UDEF_BEGIN_ = 100,
-	CANAS_DATATYPE_STRING,
-	CANAS_DATATYPE_UDEF_END_ = 255,
-
-	CANAS_DATATYPE_ALL_END_ = 255
-} CanasStandardDataTypeID;
-
-typedef union {
-	uint32_t ERROR;
-
-	float FLOAT;
-
-	int32_t  LONG;
-	uint32_t ULONG;
-	uint32_t BLONG;
-
-	int16_t  SHORT;
-	uint16_t USHORT;
-	uint16_t BSHORT;
-
-	int8_t  CHAR;
-	uint8_t UCHAR;
-	uint8_t BCHAR;
-
-	int16_t  SHORT2[2];
-	uint16_t USHORT2[2];
-	uint16_t BSHORT2[2];
-
-	int8_t  CHAR4[4];
-	uint8_t UCHAR4[4];
-	uint8_t BCHAR4[4];
-
-	int8_t  CHAR2[2];
-	uint8_t UCHAR2[2];
-	uint8_t BCHAR2[2];
-
-	uint32_t MEMID;
-	uint32_t CHKSUM;
-
-	uint8_t ACHAR;
-	uint8_t ACHAR2[2];
-	uint8_t ACHAR4[4];
-
-	int8_t  CHAR3[3];
-	uint8_t UCHAR3[3];
-	uint8_t BCHAR3[3];
-	uint8_t ACHAR3[3];
-
-	uint32_t DOUBLEH;
-	uint32_t DOUBLEL;
-} CanasDataContainer;
-
-typedef struct {
-	uint8_t type;                 ///< @ref InsCanStandardDataTypeID or custom
-	uint8_t length;               ///< Ignored with standard datatypes; required otherwise. Leave zero if unused.
-	CanasDataContainer container;
-} CanasMessageData;
+//typedef union {
+//	uint32_t ERROR;
+//
+//	float FLOAT;
+//
+//	int32_t  LONG;
+//	uint32_t ULONG;
+//	uint32_t BLONG;
+//
+//	int16_t  SHORT;
+//	uint16_t USHORT;
+//	uint16_t BSHORT;
+//
+//	int8_t  CHAR;
+//	uint8_t UCHAR;
+//	uint8_t BCHAR;
+//
+//	int16_t  SHORT2[2];
+//	uint16_t USHORT2[2];
+//	uint16_t BSHORT2[2];
+//
+//	int8_t  CHAR4[4];
+//	uint8_t UCHAR4[4];
+//	uint8_t BCHAR4[4];
+//
+//	int8_t  CHAR2[2];
+//	uint8_t UCHAR2[2];
+//	uint8_t BCHAR2[2];
+//
+//	uint32_t MEMID;
+//	uint32_t CHKSUM;
+//
+//	uint8_t ACHAR;
+//	uint8_t ACHAR2[2];
+//	uint8_t ACHAR4[4];
+//
+//	int8_t  CHAR3[3];
+//	uint8_t UCHAR3[3];
+//	uint8_t BCHAR3[3];
+//	uint8_t ACHAR3[3];
+//
+//	uint32_t DOUBLEH;
+//	uint32_t DOUBLEL;
+//} CanasDataContainer;
 
 typedef struct {
 	CanasMessageData data;
@@ -227,7 +224,8 @@ typedef enum {
 	ICAN_ERR_IS_SUBSCRIBED,
 	ICAN_ERR_CONNECTION_LOST,
 	ICAN_INF_NO_NODEID_YET,
-	ICAN_INF_NO_DATA
+	ICAN_INF_NO_DATA,
+	ICAN_INF_NO_NEW_DATA
 } InsCanErrorCode;
 
 #endif
