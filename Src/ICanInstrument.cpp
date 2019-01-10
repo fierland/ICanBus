@@ -22,7 +22,7 @@
 #ifdef ICAN_INSTRUMENT
 
 static const char *TAG = "ICanInstrument";
-//#define LOG_LOCAL_LEVEL 3
+#define LOG_LOCAL_LEVEL 3
 
 #include "ican_debug.h"
 #include <Can2XPlane.h>
@@ -273,6 +273,7 @@ void ICanInstrument::updateInstrument()
 			_externalBusIsRunning = false;
 			_instrumentPowerIsOn = false;
 			_masterNodeId = 0;
+			_node_id = 255;
 			// poweroff instrument
 		}
 		break;

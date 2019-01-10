@@ -18,7 +18,7 @@
 // Thanks to mjs513/CANaerospace (Pavel Kirienko, 2013 (pavel.kirienko@gmail.com))
 //-------------------------------------------------------------------------------------------------------------------
 static const char *TAG = "ICanBase";
-//#define LOG_LOCAL_LEVEL 4
+#define LOG_LOCAL_LEVEL 3
 
 #include "ICanBase.h"
 #include "HardwareSerial.h"

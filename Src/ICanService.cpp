@@ -67,19 +67,9 @@ ICanService::ICanService(ICanBase * CanAsBus, ICanSrvCodes serviceID)
 void ICanService::checkNodes(long timestamp)
 {
 	// cleanup for stations not responding  ?
-
+#ifdef ICAN_MASTER
 	if ((_lastCleanupTs + CANAS_NODE_CLEANUP_MSEC) < timestamp)
 	{
-		//QList < _ICanNodeInfo*>::ConstIterator it = _nodeRefs.front();
-		//for (_ICanNodeInfo* myNode : _nodeRefs:iterator)
-		//{
-		//	ESP_LOGD(TAG, "Current Node %d ts=%d", myNode->nodeId, myNode->timestamp);
-		//	if ((myNode->timestamp + CANAS_NODE_TIMEOUT_MSEC) < timestamp)
-		//	{
-		//		ESP_LOGI(TAG, "Removing node %d", myNode->nodeId);
-		//	}
-		//}
-
 		ESP_LOGD(TAG, "Node cleanup for %d nodes [%d]", _nodeRefs.length(), timestamp);
 
 		for (int i = _nodeRefs.length() - 1; i >= 0; i--)
@@ -99,36 +89,6 @@ void ICanService::checkNodes(long timestamp)
 
 					_findNode(_canItemNodeRefs[j], thisNode->nodeId, true);
 
-					//while (thisNode != NULL)
-					//{
-					//	ESP_LOGV(TAG, "in node %d", thisNode->nodeId);
-					//	if (thisNode->nodeId == thisInfoNode->nodeId)
-					//	{
-					//		// remove it
-					//		curNode = thisNode;
-					//
-					//		_canItemNodeRefs[j]->subscriptions--;
-					//
-					//
-					//		if (thisNode->prev == NULL)
-					//		{
-					//			// we aree at first node
-					//			_canItemNodeRefs[j]->firstNode = thisNode->next;
-					//			thisNode->next->prev = NULL;
-					//		}
-					//		else
-					//		{
-					//			thisNode->next->prev = thisNode->prev;
-					//			thisNode->prev->next = thisNode->next;
-					//			thisNode = thisNode->next;
-					//		}
-					//		delete curNode;
-					//	}
-					//	else
-					//	{
-					//		thisNode = thisNode->next;
-					//	}
-					//}
 					ESP_LOGD(TAG, "Subscriptions %d for:%d", _canItemNodeRefs[j]->subscriptions, _canItemNodeRefs[j]->canId);
 					if (_canItemNodeRefs[j]->subscriptions <= 0)
 					{
@@ -146,6 +106,7 @@ void ICanService::checkNodes(long timestamp)
 			}
 		}
 	}
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -153,6 +114,8 @@ void ICanService::checkNodes(long timestamp)
 int ICanService::_findNodeInList(uint8_t toFind)
 {
 	int curRecord = -1;
+
+#ifdef ICAN_MASTER
 	_ICanNodeInfo* tmpRef;
 
 	ESP_LOGV(TAG, "find in list:%d:items in list:%d", toFind, _nodeRefs.size());
@@ -172,15 +135,18 @@ int ICanService::_findNodeInList(uint8_t toFind)
 
 	ESP_LOGV(TAG, "find in list done:%d", curRecord);
 
+#endif
 	return curRecord;
 }
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService::_findNode(_canitemNode* myStruct, uint8_t nodeId, bool doDelete)
 {
+	int result = ICAN_ERR_OK;
+
+#ifdef ICAN_MASTER
 	int i = 0;
 	_subscribedNode* curNode;
 	_subscribedNode* prevNode;
-	int result = ICAN_ERR_OK;
 
 	ESP_LOGV(TAG, "find node:", nodeId);
 
@@ -223,7 +189,7 @@ int ICanService::_findNode(_canitemNode* myStruct, uint8_t nodeId, bool doDelete
 	result = -ICAN_ERR_BAD_NODE_ID;
 
 	ESP_LOGV(TAG, "find node done:%d", result);
-
+#endif
 	return result;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -232,6 +198,7 @@ int ICanService::_findNode(_canitemNode* myStruct, uint8_t nodeId, bool doDelete
 int ICanService::_findInCanIdList(uint16_t toFind)
 {
 	int curRecord = -1;
+#ifdef ICAN_MASTER
 	_canitemNode* tmpRef;
 
 	ESP_LOGV(TAG, "CAN find canid in list:%d items in list:%d", toFind, _canItemNodeRefs.size());
@@ -251,7 +218,7 @@ int ICanService::_findInCanIdList(uint16_t toFind)
 	}
 
 	ESP_LOGV(TAG, "find canid done:%d", curRecord);
-
+#endif
 	return curRecord;
 }
 //===================================================================================================================
@@ -280,6 +247,7 @@ ICanService_beacon::~ICanService_beacon()
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService_beacon::ProcessFrame(CanasMessage * msg)
 {
+#ifdef ICAN_MASTER
 	_ICanNodeInfo* newNode;
 	int curRecord;
 	uint8_t newNodeId;
@@ -315,7 +283,7 @@ int ICanService_beacon::ProcessFrame(CanasMessage * msg)
 	// TODO: neat timestamp
 	newNode->timestamp = CANdriver::timeStamp();
 	newNode->nodeState = msg->data.container.UCHAR4[3];
-
+#endif
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -323,6 +291,7 @@ int ICanService_beacon::ProcessFrame(CanasMessage * msg)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService_beacon::Response(CanasMessage * msg)
 {
+#ifdef ICAN_INSTRUMENT
 	// check if it is request or reply
 	uint8_t myNodeId;
 
@@ -367,7 +336,7 @@ int ICanService_beacon::Response(CanasMessage * msg)
 	{
 		ESP_LOGE(TAG, "srv ids: failed to respond:%d", ret);
 	}
-
+#endif
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -375,6 +344,7 @@ int ICanService_beacon::Response(CanasMessage * msg)
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService_beacon::Request(ulong timestamp)
 {
+#ifdef ICAN_MASTER
 	CanasMessage msg;
 
 	msg.message_code = 0;  // CANAS version == 0
@@ -392,7 +362,7 @@ int ICanService_beacon::Request(ulong timestamp)
 		ESP_LOGE(TAG, "beacon srv ids: failed to respond:%d", ret);
 		return ret;
 	}
-
+#endif
 	return ICAN_ERR_OK;
 }
 
@@ -617,9 +587,11 @@ int ICanService_requestdata::Response(CanasMessage* msg)
 
 int ICanService_acceptdata::Response(CanasMessage * msg)
 {
+#ifdef ICAN_MASTER
 	// TODO: Code
 	ESP_LOGI(TAG, "Receive data request for %d from %d", msg->data.container.USHORT2[0], msg->can_id);
 
+#endif
 	return ICAN_ERR_LOGIC;
 }
 //-------------------------------------------------------------------------------------------------------------------
@@ -664,7 +636,7 @@ int ICanService_acceptdata::Request(uint16_t dataId, int nodeId, int maxInterval
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------
-// helper function to find a item i the list of  subscribed items
+// helper function to find a item i the list of  acepted items
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService_acceptdata::_findInList(uint8_t toFind)
 {
@@ -718,6 +690,7 @@ ICanService_getNodeId::ICanService_getNodeId(ICanBase * CanAsBus) : ICanService(
 //-------------------------------------------------------------------------------------------------------------------
 int ICanService_getNodeId::Response(CanasMessage * msg)
 {
+#ifdef ICAN_MASTER
 	// check if it is request or reply
 	_node *curNode, *lastNode = NULL, *newNode = NULL;
 	uint32_t newSerial;
@@ -778,7 +751,7 @@ int ICanService_getNodeId::Response(CanasMessage * msg)
 	{
 		ESP_LOGI(TAG, "!!srv ids: failed to respond:%d", ret);
 	}
-
+#endif
 	return ICAN_ERR_OK;
 }
 //-------------------------------------------------------------------------------------------------------------------

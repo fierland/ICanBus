@@ -18,6 +18,7 @@
 // Thanks to mjs513/CANaerospace (Pavel Kirienko, 2013 (pavel.kirienko@gmail.com))
 //-------------------------------------------------------------------------------------------------------------------
 static const char *TAG = "ICanBaseSrv";
+#define LOG_LOCAL_LEVEL 3
 
 #include "ICanBaseSrv.h"
 #include "ican_debug.h"

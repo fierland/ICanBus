@@ -143,8 +143,8 @@ typedef union {
 } CanasDataContainer;
 
 typedef struct {
-	uint8_t type;                 ///< @ref InsCanStandardDataTypeID or custom
-	uint8_t length;               ///< Ignored with standard datatypes; required otherwise. Leave zero if unused.
+	uint8_t type = CANAS_DATATYPE_FLOAT;    ///< @ref InsCanStandardDataTypeID or custom
+	uint8_t length = 4;							///< Ignored with standard datatypes; required otherwise. Leave zero if unused.
 	CanasDataContainer container;
 } CanasMessageData;
 
